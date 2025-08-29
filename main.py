@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import sqlite3
@@ -7,6 +7,9 @@ import re
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import json
+from slugify import slugify
+import bleach
+from markupsafe import Markup
 
 app = FastAPI(title="Portal Reativa", description="Portal de propriedades imobiliárias")
 
@@ -52,24 +55,40 @@ async def search_api(request: Request, q: str = Query(...), page: int = 1):
         "total": total
     })
 
-@app.get("/property/{property_id}", response_class=HTMLResponse)
-async def property_detail(request: Request, property_id: int):
+@app.get("/imovel/{slug}", response_class=HTMLResponse)
+async def property_detail_by_slug(request: Request, slug: str):
+    """New SEO-friendly property detail route"""
+    # Extract property ID from slug (last part after final dash)
+    try:
+        property_id = int(slug.split('-')[-1])
+    except (ValueError, IndexError):
+        # Invalid slug format, redirect to home
+        return RedirectResponse(url="/", status_code=301)
+    
     property_data = get_property_by_id(property_id)
     if not property_data:
-        # Return 404 or redirect to home
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "query": "",
-            "properties": [],
-            "current_page": 1,
-            "total_pages": 0,
-            "total": 0
-        })
+        return RedirectResponse(url="/", status_code=301)
+    
+    # Check if the current slug matches the canonical slug
+    canonical_slug = property_data['slug']
+    if slug != canonical_slug:
+        # Redirect to canonical URL for SEO
+        return RedirectResponse(url=f"/imovel/{canonical_slug}", status_code=301)
     
     return templates.TemplateResponse("property.html", {
         "request": request,
         "property": property_data
     })
+
+@app.get("/property/{property_id}", response_class=HTMLResponse)
+async def property_detail_redirect(request: Request, property_id: int):
+    """Legacy route - redirect to SEO-friendly URL"""
+    property_data = get_property_by_id(property_id)
+    if not property_data:
+        return RedirectResponse(url="/", status_code=301)
+    
+    # Redirect to new SEO-friendly URL
+    return RedirectResponse(url=f"/imovel/{property_data['slug']}", status_code=301)
 
 def get_recent_properties(page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
     conn = sqlite3.connect(DB_PATH)
@@ -109,6 +128,9 @@ def get_recent_properties(page: int = 1, per_page: int = 12) -> tuple[List[Dict[
         if prop['price']:
             prop['formatted_price'] = format_price(prop['price'])
         
+        # Generate slug for SEO-friendly URLs
+        prop['slug'] = generate_property_slug(prop)
+        
         properties.append(prop)
     
     conn.close()
@@ -145,6 +167,17 @@ def get_property_by_id(property_id: int) -> Dict[str, Any]:
     # Format price
     if property_data['price']:
         property_data['formatted_price'] = format_price(property_data['price'])
+    
+    # Calculate price per square meter
+    if property_data['price'] and property_data.get('area'):
+        property_data['price_per_sqm'] = calculate_price_per_sqm(property_data['price'], property_data['area'])
+    
+    # Generate SEO-friendly slug
+    property_data['slug'] = generate_property_slug(property_data)
+    
+    # Sanitize HTML description
+    if property_data.get('description'):
+        property_data['description_html'] = sanitize_html_description(property_data['description'])
     
     conn.close()
     return property_data
@@ -193,6 +226,9 @@ def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[Li
         # Format price
         if prop['price']:
             prop['formatted_price'] = format_price(prop['price'])
+        
+        # Generate slug for SEO-friendly URLs
+        prop['slug'] = generate_property_slug(prop)
         
         properties.append(prop)
     
@@ -259,6 +295,67 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
         params.append(bedrooms)
     
     return conditions, params
+
+def generate_property_slug(property_data: Dict[str, Any]) -> str:
+    """Generate SEO-friendly slug for property"""
+    parts = []
+    
+    # Add property type
+    if property_data.get('type'):
+        parts.append(property_data['type'].lower())
+    
+    # Add city
+    if property_data.get('city'):
+        parts.append(property_data['city'].lower())
+    
+    # Add neighborhood
+    if property_data.get('neighborhood'):
+        parts.append(property_data['neighborhood'].lower())
+    
+    # Add title or create from type and details
+    if property_data.get('title'):
+        title_slug = slugify(property_data['title'][:50])  # Limit length
+        parts.append(title_slug)
+    else:
+        # Create title from property details
+        title_parts = []
+        if property_data.get('type'):
+            title_parts.append(property_data['type'])
+        if property_data.get('bedrooms'):
+            title_parts.append(f"{property_data['bedrooms']}-quartos")
+        if title_parts:
+            parts.append(slugify(' '.join(title_parts)))
+    
+    # Join parts and add property ID
+    slug_base = '-'.join(filter(None, parts))
+    return f"{slug_base}-{property_data['id']}" if slug_base else f"imovel-{property_data['id']}"
+
+def sanitize_html_description(html_content: str) -> str:
+    """Sanitize HTML content for safe display"""
+    if not html_content:
+        return ""
+    
+    # Allowed HTML tags for property descriptions
+    allowed_tags = ['p', 'br', 'strong', 'b', 'em', 'i', 'ul', 'ol', 'li', 'h3', 'h4', 'h5', 'h6']
+    allowed_attributes = {}
+    
+    # Clean HTML and allow safe tags
+    cleaned = bleach.clean(
+        html_content, 
+        tags=allowed_tags, 
+        attributes=allowed_attributes,
+        strip=True
+    )
+    
+    return Markup(cleaned)
+
+def calculate_price_per_sqm(price: float, area: float) -> str:
+    """Calculate price per square meter"""
+    if not price or not area or area == 0:
+        return ""
+    
+    price_per_sqm = price / area
+    return f"R$ {price_per_sqm:,.0f}/m²".replace(",", ".")
 
 def format_price(price: float) -> str:
     # Format with thousands separator
