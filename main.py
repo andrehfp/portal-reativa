@@ -43,10 +43,65 @@ async def search_api(request: Request, q: str = Query(...), page: int = 1):
     return templates.TemplateResponse("components/property_grid.html", {
         "request": request,
         "properties": properties,
+        "query": q,
         "current_page": page,
         "total_pages": total_pages,
         "total": total
     })
+
+@app.get("/property/{property_id}", response_class=HTMLResponse)
+async def property_detail(request: Request, property_id: int):
+    property_data = get_property_by_id(property_id)
+    if not property_data:
+        # Return 404 or redirect to home
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "query": "",
+            "properties": [],
+            "current_page": 1,
+            "total_pages": 0,
+            "total": 0
+        })
+    
+    return templates.TemplateResponse("property.html", {
+        "request": request,
+        "property": property_data
+    })
+
+def get_property_by_id(property_id: int) -> Dict[str, Any]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    
+    cursor = conn.execute(
+        "SELECT * FROM properties WHERE id = ? AND status = 'active'",
+        [property_id]
+    )
+    
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+    
+    property_data = dict(row)
+    
+    # Parse JSON fields
+    if property_data['images']:
+        try:
+            property_data['images'] = json.loads(property_data['images'])
+        except:
+            property_data['images'] = []
+    if property_data['features']:
+        try:
+            property_data['features'] = json.loads(property_data['features'])
+        except:
+            property_data['features'] = []
+    
+    # Format price
+    if property_data['price']:
+        property_data['formatted_price'] = format_price(property_data['price'])
+    
+    conn.close()
+    return property_data
 
 def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
     conn = sqlite3.connect(DB_PATH)

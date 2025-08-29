@@ -2,45 +2,176 @@
 <html lang="pt-BR" class="h-full">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Portal Reativa - Propriedades Imobiliárias{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{% block title %}Reativa – Encontre seu espaço{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+                    },
+                    colors: {
+                        gray: {
+                            50: '#FBFBFD',
+                            100: '#F7F7FA',
+                            200: '#EDEDF2',
+                            300: '#D2D2DC',
+                            400: '#8E8E93',
+                            500: '#636366',
+                            600: '#48484A',
+                            700: '#363638',
+                            800: '#242426',
+                            900: '#1C1C1E',
+                        },
+                        blue: {
+                            500: '#007AFF',
+                            600: '#0051D5',
+                        }
+                    },
+                    spacing: {
+                        '18': '4.5rem',
+                        '88': '22rem',
+                    },
+                    fontSize: {
+                        'xxs': '0.625rem',
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-in-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                    },
+                }
+            }
+        }
+    </script>
     <style>
-        .property-card {
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
-        .property-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        
+        @keyframes slideUp {
+            from { 
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to { 
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
+        
+        /* Smooth transitions for all interactive elements */
+        * {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        /* Custom focus styles */
+        .focus-ring:focus {
+            outline: none;
+            box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+        }
+        
+        /* Subtle hover for cards */
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .card-hover:hover {
+            transform: scale(1.02);
+            box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.15);
+        }
+        
+        /* Search input refinements */
+        .search-input {
+            transition: all 0.2s ease;
+        }
+        
         .search-input:focus {
-            box-shadow: 0 0 0 3px rgb(59 130 246 / 0.1);
+            background-color: white;
+            box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+        
+        /* Minimal scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #D2D2DC;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #8E8E93;
+        }
+        
+        /* Image loading animation */
+        .image-loading {
+            background: linear-gradient(90deg, #F7F7FA 0%, #EDEDF2 50%, #F7F7FA 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        /* Premium button styles */
+        .btn-primary {
+            background: linear-gradient(180deg, #007AFF 0%, #0051D5 100%);
+            transition: all 0.2s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0);
         }
     </style>
 </head>
-<body class="h-full bg-gray-50 font-sans">
+<body class="h-full bg-gray-50 font-sans text-gray-900 antialiased">
     <div class="min-h-full">
-        <header class="bg-white shadow-sm border-b border-gray-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <!-- Refined Header -->
+        <header class="bg-white/95 backdrop-blur-md border-b border-gray-200/50 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center">
-                        <h1 class="text-2xl font-bold text-gray-900">Portal Reativa</h1>
-                        <span class="ml-2 text-sm text-gray-500">Propriedades</span>
+                    <div class="flex items-center space-x-3">
+                        <a href="/" class="text-xl font-semibold tracking-tight">Reativa</a>
+                        <span class="text-xs text-gray-400 font-normal">PROPRIEDADES</span>
                     </div>
+                    <nav class="hidden md:flex items-center space-x-8">
+                        <a href="/" class="text-sm text-gray-600 hover:text-gray-900 transition-colors">Buscar</a>
+                        <a href="#" class="text-sm text-gray-600 hover:text-gray-900 transition-colors">Favoritos</a>
+                        <a href="#" class="text-sm text-gray-600 hover:text-gray-900 transition-colors">Contato</a>
+                    </nav>
                 </div>
             </div>
         </header>
         
-        <main>
+        <main class="animate-fade-in">
             {% block content %}{% endblock %}
         </main>
         
-        <footer class="bg-white border-t border-gray-200 mt-20">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <p class="text-center text-gray-500 text-sm">
-                    Portal Reativa - Encontre sua propriedade ideal
-                </p>
+        <!-- Minimal Footer -->
+        <footer class="bg-white border-t border-gray-100 mt-32">
+            <div class="max-w-7xl mx-auto px-6 lg:px-8 py-12">
+                <div class="text-center">
+                    <p class="text-xs text-gray-400 tracking-wide uppercase mb-2">Portal Reativa</p>
+                    <p class="text-sm text-gray-500">Encontre seu espaço ideal</p>
+                </div>
             </div>
         </footer>
     </div>

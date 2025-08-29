@@ -1,48 +1,87 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Search Section -->
-    <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold text-gray-900 mb-4">
-            Encontre sua propriedade ideal
+<div class="max-w-7xl mx-auto px-6 lg:px-8 py-12">
+    <!-- Hero Section with Better Spacing -->
+    <div class="text-center mb-16 animate-slide-up">
+        <h2 class="text-4xl md:text-5xl font-light text-gray-900 mb-6 tracking-tight">
+            Encontre seu espaço
         </h2>
-        <p class="text-lg text-gray-600 mb-8 max-w-2xl mx-auto">
-            Busque por casas, apartamentos e terrenos usando linguagem natural
+        <p class="text-lg text-gray-500 mb-12 max-w-2xl mx-auto font-light">
+            Busque com linguagem natural. Simples e direto.
         </p>
         
-        <form class="max-w-3xl mx-auto" hx-get="/search" hx-target="#search-results" hx-trigger="submit, keyup changed delay:500ms from:input[name='q']">
-            <div class="relative">
+        <!-- Refined Search Bar -->
+        <form class="max-w-3xl mx-auto" 
+              hx-get="/search" 
+              hx-target="#search-results" 
+              hx-trigger="submit, keyup changed delay:500ms from:input[name='q']"
+              hx-indicator="#search-spinner">
+            <div class="relative group">
                 <input 
                     type="text" 
                     name="q" 
                     value="{{ query }}"
-                    placeholder="Ex: casas de até 200k no jardim carvalho, apartamentos 2 quartos para alugar..."
-                    class="search-input w-full px-6 py-4 text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Tente "casa com 3 quartos" ou "apartamento até 500 mil""
+                    class="search-input w-full pl-14 pr-8 py-5 text-base bg-gray-100 border-0 rounded-2xl focus-ring placeholder-gray-400"
+                    autocomplete="off"
                 >
-                <button type="submit" class="absolute right-2 top-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                    Buscar
-                </button>
+                <!-- Search Icon -->
+                <div class="absolute left-5 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <!-- Loading Spinner -->
+                <div id="search-spinner" class="htmx-indicator absolute right-5 top-1/2 transform -translate-y-1/2">
+                    <svg class="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                </div>
             </div>
         </form>
+        
+        <!-- Quick Filters -->
+        <div class="flex flex-wrap justify-center gap-3 mt-8">
+            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    hx-get="/search?q=casas" hx-target="#search-results">
+                Casas
+            </button>
+            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    hx-get="/search?q=apartamentos" hx-target="#search-results">
+                Apartamentos
+            </button>
+            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    hx-get="/search?q=até 500k" hx-target="#search-results">
+                Até R$ 500k
+            </button>
+            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    hx-get="/search?q=2 quartos" hx-target="#search-results">
+                2+ Quartos
+            </button>
+        </div>
     </div>
     
-    <!-- Search Results -->
-    <div id="search-results">
+    <!-- Search Results Container -->
+    <div id="search-results" class="min-h-[400px]">
         {% if query %}
             {% include "components/property_grid.html" %}
         {% else %}
-            <!-- Welcome Message -->
-            <div class="text-center py-16">
+            <!-- Empty State -->
+            <div class="text-center py-24">
                 <div class="max-w-md mx-auto">
-                    <svg class="mx-auto h-24 w-24 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-                    </svg>
-                    <h3 class="text-xl font-semibold text-gray-900 mb-2">
-                        Digite sua busca acima
+                    <div class="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gray-100 flex items-center justify-center">
+                        <svg class="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">
+                        Comece sua busca
                     </h3>
-                    <p class="text-gray-500">
-                        Use linguagem natural como "casas de até 300k" ou "apartamentos 2 quartos no centro"
+                    <p class="text-sm text-gray-500 leading-relaxed">
+                        Digite o que procura no campo acima.<br>
+                        Use linguagem natural, como você falaria.
                     </p>
                 </div>
             </div>
