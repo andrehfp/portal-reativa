@@ -23,6 +23,9 @@ async def home(request: Request, q: Optional[str] = None, page: int = 1):
     
     if q:
         properties, total = search_properties(q, page, per_page)
+    else:
+        # Show recent properties when no search query
+        properties, total = get_recent_properties(page, per_page)
     
     total_pages = (total + per_page - 1) // per_page
     
@@ -67,6 +70,49 @@ async def property_detail(request: Request, property_id: int):
         "request": request,
         "property": property_data
     })
+
+def get_recent_properties(page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    
+    # Count total active properties
+    count_query = "SELECT COUNT(*) as total FROM properties WHERE status = 'active'"
+    cursor = conn.execute(count_query)
+    total = cursor.fetchone()['total']
+    
+    # Get recent properties ordered by created_at
+    query = """
+        SELECT * FROM properties 
+        WHERE status = 'active' 
+        ORDER BY created_at DESC 
+        LIMIT ? OFFSET ?
+    """
+    offset = (page - 1) * per_page
+    cursor = conn.execute(query, [per_page, offset])
+    
+    properties = []
+    for row in cursor.fetchall():
+        prop = dict(row)
+        # Parse JSON fields
+        if prop['images']:
+            try:
+                prop['images'] = json.loads(prop['images'])
+            except:
+                prop['images'] = []
+        if prop['features']:
+            try:
+                prop['features'] = json.loads(prop['features'])
+            except:
+                prop['features'] = []
+        
+        # Format price
+        if prop['price']:
+            prop['formatted_price'] = format_price(prop['price'])
+        
+        properties.append(prop)
+    
+    conn.close()
+    return properties, total
 
 def get_property_by_id(property_id: int) -> Dict[str, Any]:
     conn = sqlite3.connect(DB_PATH)
@@ -215,12 +261,8 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
     return conditions, params
 
 def format_price(price: float) -> str:
-    if price >= 1_000_000:
-        return f"R$ {price/1_000_000:.1f}M"
-    elif price >= 1_000:
-        return f"R$ {price/1_000:.0f}k"
-    else:
-        return f"R$ {price:,.0f}"
+    # Format with thousands separator
+    return f"R$ {price:,.0f}".replace(",", ".")
 
 if __name__ == "__main__":
     import uvicorn

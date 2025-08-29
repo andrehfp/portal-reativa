@@ -65,7 +65,14 @@
     
     <!-- Search Results Container -->
     <div id="search-results" class="min-h-[400px]">
-        {% if query %}
+        {% if properties %}
+            {% if not query %}
+            <!-- Recent Properties Header -->
+            <div class="mb-8 text-center">
+                <h3 class="text-lg font-medium text-gray-900 mb-2">Propriedades Recentes</h3>
+                <p class="text-sm text-gray-500">As propriedades mais recentes adicionadas ao nosso portfólio</p>
+            </div>
+            {% endif %}
             {% include "components/property_grid.html" %}
         {% else %}
             <!-- Empty State -->
@@ -77,11 +84,11 @@
                         </svg>
                     </div>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">
-                        Comece sua busca
+                        Nenhuma propriedade encontrada
                     </h3>
                     <p class="text-sm text-gray-500 leading-relaxed">
-                        Digite o que procura no campo acima.<br>
-                        Use linguagem natural, como você falaria.
+                        Não conseguimos encontrar propriedades no momento.<br>
+                        Tente novamente mais tarde.
                     </p>
                 </div>
             </div>
