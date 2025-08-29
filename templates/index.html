@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Search Section -->
+    <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold text-gray-900 mb-4">
+            Encontre sua propriedade ideal
+        </h2>
+        <p class="text-lg text-gray-600 mb-8 max-w-2xl mx-auto">
+            Busque por casas, apartamentos e terrenos usando linguagem natural
+        </p>
+        
+        <form class="max-w-3xl mx-auto" hx-get="/search" hx-target="#search-results" hx-trigger="submit, keyup changed delay:500ms from:input[name='q']">
+            <div class="relative">
+                <input 
+                    type="text" 
+                    name="q" 
+                    value="{{ query }}"
+                    placeholder="Ex: casas de até 200k no jardim carvalho, apartamentos 2 quartos para alugar..."
+                    class="search-input w-full px-6 py-4 text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                >
+                <button type="submit" class="absolute right-2 top-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    Buscar
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Search Results -->
+    <div id="search-results">
+        {% if query %}
+            {% include "components/property_grid.html" %}
+        {% else %}
+            <!-- Welcome Message -->
+            <div class="text-center py-16">
+                <div class="max-w-md mx-auto">
+                    <svg class="mx-auto h-24 w-24 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                    </svg>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">
+                        Digite sua busca acima
+                    </h3>
+                    <p class="text-gray-500">
+                        Use linguagem natural como "casas de até 300k" ou "apartamentos 2 quartos no centro"
+                    </p>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

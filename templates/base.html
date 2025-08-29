@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Portal Reativa - Propriedades Imobiliárias{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        .property-card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .property-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        }
+        .search-input:focus {
+            box-shadow: 0 0 0 3px rgb(59 130 246 / 0.1);
+        }
+    </style>
+</head>
+<body class="h-full bg-gray-50 font-sans">
+    <div class="min-h-full">
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center">
+                        <h1 class="text-2xl font-bold text-gray-900">Portal Reativa</h1>
+                        <span class="ml-2 text-sm text-gray-500">Propriedades</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+        
+        <footer class="bg-white border-t border-gray-200 mt-20">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <p class="text-center text-gray-500 text-sm">
+                    Portal Reativa - Encontre sua propriedade ideal
+                </p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
