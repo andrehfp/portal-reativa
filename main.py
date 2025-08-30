@@ -360,12 +360,13 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
     params = []
     query_lower = query.lower()
     
-    # Price filters
+    # Price filters - default to sale properties for price searches
     price_patterns = [
         r'até (\d+)k', r'até (\d+) mil', r'máximo (\d+)k', r'max (\d+)k',
         r'acima de (\d+)k', r'mais de (\d+)k', r'mínimo (\d+)k', r'min (\d+)k'
     ]
     
+    price_found = False
     for pattern in price_patterns:
         match = re.search(pattern, query_lower)
         if match:
@@ -375,6 +376,12 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
             else:
                 conditions.append("price >= ?")
             params.append(price_value)
+            price_found = True
+            break
+    
+    # If price is specified but no transaction type, default to sale
+    if price_found and not any(word in query_lower for word in ['venda', 'comprar', 'compra', 'aluguel', 'alugar', 'locação']):
+        conditions.append("transaction_type = 'sale'")
     
     # Property type filters
     type_mapping = {
