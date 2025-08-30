@@ -182,58 +182,178 @@ def get_property_by_id(property_id: int) -> Dict[str, Any]:
     conn.close()
     return property_data
 
-def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+# Property abbreviation dictionary for common Brazilian real estate terms
+PROPERTY_ABBREVIATIONS = {
+    # Location prefixes
+    'jd': 'jardim',
+    'jrd': 'jardim',
+    'vl': 'vila',
+    'pq': 'parque',
+    'st': 'santo',
+    'sta': 'santa',
+    'res': 'residencial',
+    'cond': 'condomínio',
+    'cjto': 'conjunto',
     
-    # Parse natural language query
-    conditions, params = parse_search_query(query)
+    # Property types
+    'ap': 'apartamento',
+    'apto': 'apartamento',
+    'aptos': 'apartamentos',
+    'ed': 'edifício',
+    'cj': 'conjunto',
+    'sl': 'sala',
     
-    # Build SQL query
-    base_query = """
-        SELECT * FROM properties 
-        WHERE status = 'active'
+    # Streets and addresses
+    'av': 'avenida',
+    'r': 'rua',
+    'trav': 'travessa',
+    'al': 'alameda',
+    'pca': 'praça',
+    'est': 'estrada',
+    
+    # Common city abbreviations (Brazil)
+    'ctba': 'curitiba',
+    'cwb': 'curitiba',
+    'bc': 'balneário camboriú',
+    'sp': 'são paulo',
+    'rj': 'rio de janeiro',
+    'bh': 'belo horizonte',
+    'poa': 'porto alegre',
+    'rec': 'recife',
+    'ssalvador': 'salvador',
+    'bsb': 'brasília',
+    
+    # Real estate specific terms
+    'imov': 'imóvel',
+    'imovel': 'imóvel',
+    'cobertura': 'cobertura',
+    'duplex': 'duplex',
+    'triplex': 'triplex',
+    'studio': 'studio',
+    'loft': 'loft',
+    'sobrado': 'sobrado',
+    'chacara': 'chácara',
+    'sitio': 'sítio',
+    'fazenda': 'fazenda',
+    'terreno': 'terreno',
+    'lote': 'lote',
+    'galpao': 'galpão',
+    'comercial': 'comercial',
+    'industrial': 'industrial'
+}
+
+def expand_abbreviations(text: str) -> str:
     """
+    Expand common real estate abbreviations in the search text.
     
-    if conditions:
-        base_query += " AND " + " AND ".join(conditions)
+    Args:
+        text: Original search query text
+        
+    Returns:
+        Text with abbreviations expanded
+    """
+    if not text:
+        return text
+        
+    # Split into words and process each
+    words = text.lower().split()
+    expanded_words = []
     
-    # Count total results
-    count_query = f"SELECT COUNT(*) as total FROM ({base_query})"
-    cursor = conn.execute(count_query, params)
-    total = cursor.fetchone()['total']
+    for word in words:
+        # Remove punctuation for matching but preserve it
+        clean_word = re.sub(r'[^\w]', '', word)
+        
+        # Check if the clean word is an abbreviation
+        if clean_word in PROPERTY_ABBREVIATIONS:
+            # Replace the clean part but preserve any punctuation
+            expanded_word = word.replace(clean_word, PROPERTY_ABBREVIATIONS[clean_word])
+            expanded_words.append(expanded_word)
+        else:
+            expanded_words.append(word)
     
-    # Get paginated results
-    base_query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-    offset = (page - 1) * per_page
-    cursor = conn.execute(base_query, params + [per_page, offset])
-    
-    properties = []
-    for row in cursor.fetchall():
-        prop = dict(row)
-        # Parse JSON fields
-        if prop['images']:
-            try:
-                prop['images'] = json.loads(prop['images'])
-            except:
+    return ' '.join(expanded_words)
+
+def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        
+        # Expand abbreviations before parsing
+        expanded_query = expand_abbreviations(query)
+        
+        # Parse natural language query
+        conditions, params = parse_search_query(expanded_query)
+        
+        # Build SQL query
+        base_query = """
+            SELECT * FROM properties 
+            WHERE status = 'active'
+        """
+        
+        if conditions:
+            base_query += " AND " + " AND ".join(conditions)
+        
+        # Count total results
+        count_query = """
+            SELECT COUNT(*) as total FROM properties 
+            WHERE status = 'active'
+        """
+        
+        if conditions:
+            count_query += " AND " + " AND ".join(conditions)
+        
+        cursor = conn.execute(count_query, params)
+        total = cursor.fetchone()['total']
+        
+        # Get paginated results
+        base_query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        offset = (page - 1) * per_page
+        cursor = conn.execute(base_query, params + [per_page, offset])
+        
+        properties = []
+        for row in cursor.fetchall():
+            prop = dict(row)
+            # Parse JSON fields
+            if prop['images']:
+                try:
+                    prop['images'] = json.loads(prop['images'])
+                except json.JSONDecodeError:
+                    prop['images'] = []
+            else:
                 prop['images'] = []
-        if prop['features']:
-            try:
-                prop['features'] = json.loads(prop['features'])
-            except:
+                
+            if prop['features']:
+                try:
+                    prop['features'] = json.loads(prop['features'])
+                except json.JSONDecodeError:
+                    prop['features'] = []
+            else:
                 prop['features'] = []
+            
+            # Format price
+            if prop['price']:
+                prop['formatted_price'] = format_price(prop['price'])
+            
+            # Generate slug for SEO-friendly URLs
+            prop['slug'] = generate_property_slug(prop)
+            
+            properties.append(prop)
         
-        # Format price
-        if prop['price']:
-            prop['formatted_price'] = format_price(prop['price'])
+        conn.close()
+        return properties, total
         
-        # Generate slug for SEO-friendly URLs
-        prop['slug'] = generate_property_slug(prop)
-        
-        properties.append(prop)
-    
-    conn.close()
-    return properties, total
+    except sqlite3.Error as e:
+        print(f"Database error in search_properties: {e}")
+        # Return empty results on database error
+        if 'conn' in locals():
+            conn.close()
+        return [], 0
+    except Exception as e:
+        print(f"Unexpected error in search_properties: {e}")
+        # Return empty results on any other error
+        if 'conn' in locals():
+            conn.close()
+        return [], 0
 
 def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
     conditions = []
