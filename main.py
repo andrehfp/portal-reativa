@@ -398,14 +398,41 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
     elif any(word in query_lower for word in ['aluguel', 'alugar', 'locação']):
         conditions.append("transaction_type = 'rent'")
     
-    # Location filters (neighborhood, city)
-    location_words = re.findall(r'(?:no|na|em)\s+([a-záêâôõç\s]+?)(?:\s|$)', query_lower)
+    # Enhanced location filters - prioritize exact neighborhood matches
+    location_words = re.findall(r'(?:no|na|em)\s+([a-záêâôõç\s]+?)(?:\s+(?:até|acima|para|com|\d)|$)', query_lower)
     for location in location_words:
         location = location.strip()
         if location:
-            conditions.append("(LOWER(neighborhood) LIKE ? OR LOWER(city) LIKE ? OR LOWER(address) LIKE ?)")
-            like_term = f"%{location}%"
-            params.extend([like_term, like_term, like_term])
+            # Priority search: exact match > starts with > contains > city match
+            conditions.append("""(
+                LOWER(neighborhood) = ? OR 
+                LOWER(neighborhood) LIKE ? OR 
+                LOWER(city) = ? OR
+                LOWER(address) LIKE ?
+            )""")
+            exact_term = location.lower()
+            starts_with_term = f"{location.lower()}%"
+            address_term = f"%{location.lower()}%"
+            params.extend([exact_term, starts_with_term, exact_term, address_term])
+    
+    # Also handle direct location searches (without prepositions)
+    # Look for location names that aren't already captured
+    remaining_query = query_lower
+    # Remove already processed parts (prices, types, transactions, preposition locations)
+    for pattern in [r'até \d+k?', r'acima de \d+k?', r'para (?:venda|aluguel)', r'(?:casa|apartamento|terreno)s?', r'(?:no|na|em)\s+[a-záêâôõç\s]+']:
+        remaining_query = re.sub(pattern, '', remaining_query)
+    
+    remaining_query = remaining_query.strip()
+    if remaining_query and len(remaining_query.split()) >= 2:
+        # Likely a compound location name (like "jardim carvalho", "vila liane")
+        conditions.append("""(
+            LOWER(neighborhood) = ? OR 
+            LOWER(neighborhood) LIKE ? OR 
+            LOWER(city) = ?
+        )""")
+        exact_term = remaining_query.lower()
+        starts_with_term = f"{remaining_query.lower()}%"
+        params.extend([exact_term, starts_with_term, exact_term])
     
     # Bedrooms
     bedroom_match = re.search(r'(\d+)\s*(?:quartos?|dormitórios?)', query_lower)
