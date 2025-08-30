@@ -12,7 +12,7 @@
             <!-- Main Image -->
             <div class="col-span-2 row-span-2 md:col-span-3 relative overflow-hidden rounded-xl cursor-pointer group" 
                  data-gallery-index="0" 
-                 data-gallery-images="{{ property.images|tojson|e }}">
+                 data-gallery-images='{{ property.images|tojson }}'>
                 {% if property.images and property.images|length > 0 %}
                     <img src="{{ property.images[0] }}" 
                          alt="{{ property.title }}" 
@@ -36,7 +36,7 @@
                 {% for image in property.images[1:5] %}
                 <div class="col-span-1 relative overflow-hidden rounded-xl cursor-pointer group {% if loop.index > 2 %}hidden md:block{% endif %}" 
                      data-gallery-index="{{ loop.index }}" 
-                     data-gallery-images="{{ property.images|tojson|e }}">
+                     data-gallery-images='{{ property.images|tojson }}'>
                     <img src="{{ image }}" 
                          alt="{{ property.title }}" 
                          class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
