@@ -282,7 +282,7 @@ def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[Li
         expanded_query = expand_abbreviations(query)
         
         # Parse natural language query
-        conditions, params = parse_search_query(expanded_query)
+        conditions, params, search_metadata = parse_search_query(expanded_query)
         
         # Build SQL query
         base_query = """
@@ -305,8 +305,20 @@ def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[Li
         cursor = conn.execute(count_query, params)
         total = cursor.fetchone()['total']
         
+        # Smart ordering based on search type
+        if search_metadata['price_found']:
+            if search_metadata['price_direction'] == 'max':
+                # For "até 500k", show expensive properties first (closer to limit)
+                order_clause = " ORDER BY price DESC, created_at DESC"
+            else:
+                # For "acima de 200k", show cheaper properties first (closer to minimum)
+                order_clause = " ORDER BY price ASC, created_at DESC"
+        else:
+            # Default ordering by recency
+            order_clause = " ORDER BY created_at DESC"
+        
         # Get paginated results
-        base_query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        base_query += order_clause + " LIMIT ? OFFSET ?"
         offset = (page - 1) * per_page
         cursor = conn.execute(base_query, params + [per_page, offset])
         
@@ -355,7 +367,7 @@ def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[Li
             conn.close()
         return [], 0
 
-def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
+def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
     conditions = []
     params = []
     query_lower = query.lower()
@@ -367,14 +379,17 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
     ]
     
     price_found = False
+    price_direction = None  # 'max' for até/máximo, 'min' for acima/mínimo
     for pattern in price_patterns:
         match = re.search(pattern, query_lower)
         if match:
             price_value = int(match.group(1)) * 1000
             if 'até' in pattern or 'máximo' in pattern or 'max' in pattern:
                 conditions.append("price <= ?")
+                price_direction = 'max'
             else:
                 conditions.append("price >= ?")
+                price_direction = 'min'
             params.append(price_value)
             price_found = True
             break
@@ -382,6 +397,10 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
     # If price is specified but no transaction type, default to sale
     if price_found and not any(word in query_lower for word in ['venda', 'comprar', 'compra', 'aluguel', 'alugar', 'locação']):
         conditions.append("transaction_type = 'sale'")
+    
+    # Filter out properties with invalid prices when price filter is used
+    if price_found:
+        conditions.append("price > 0")
     
     # Property type filters
     type_mapping = {
@@ -448,7 +467,13 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
         conditions.append("bedrooms >= ?")
         params.append(bedrooms)
     
-    return conditions, params
+    # Return metadata about the search
+    search_metadata = {
+        'price_found': price_found,
+        'price_direction': price_direction  # 'max' for "até", 'min' for "acima"
+    }
+    
+    return conditions, params, search_metadata
 
 def generate_property_slug(property_data: Dict[str, Any]) -> str:
     """Generate SEO-friendly slug for property"""
