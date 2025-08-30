@@ -24,7 +24,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
         {% for property in properties %}
             <article class="group bg-white rounded-2xl overflow-hidden border border-gray-100 card-hover cursor-pointer"
-                     onclick="window.location.href='/property/{{ property.id }}'">
+                     onclick="window.location.href='/imovel/{{ property.slug }}'">
                 <!-- Image Container with Aspect Ratio -->
                 <div class="aspect-[4/3] bg-gray-100 relative overflow-hidden">
                     {% if property.images and property.images|length > 0 %}
