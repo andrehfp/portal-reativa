@@ -140,6 +140,93 @@
         .btn-primary:active {
             transform: translateY(0);
         }
+        
+        /* Filter Pills Styling */
+        .filter-pill-active {
+            transform: scale(1);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(8px);
+            animation: filterPillEnter 0.3s ease-out;
+        }
+        
+        .filter-pill-active:hover {
+            transform: scale(1.02);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .filter-pill-suggestion {
+            transform: scale(1);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: filterPillEnter 0.3s ease-out;
+            animation-fill-mode: both;
+        }
+        
+        .filter-pill-suggestion:hover {
+            transform: scale(1.02);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .filter-pill-suggestion:active {
+            transform: scale(0.98);
+        }
+        
+        @keyframes filterPillEnter {
+            0% {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            50% {
+                opacity: 0.7;
+                transform: scale(1.02);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        
+        /* Mobile-optimized filter scroll */
+        #filter-suggestions {
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        
+        #filter-suggestions::-webkit-scrollbar {
+            display: none;
+        }
+        
+        /* Stagger animation for suggestions */
+        .filter-pill-suggestion:nth-child(1) { animation-delay: 0ms; }
+        .filter-pill-suggestion:nth-child(2) { animation-delay: 50ms; }
+        .filter-pill-suggestion:nth-child(3) { animation-delay: 100ms; }
+        .filter-pill-suggestion:nth-child(4) { animation-delay: 150ms; }
+        .filter-pill-suggestion:nth-child(5) { animation-delay: 200ms; }
+        
+        /* Mobile responsive filter pills */
+        @media (max-width: 768px) {
+            #active-filters {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                padding-bottom: 8px;
+                scrollbar-width: none;
+            }
+            
+            #active-filters::-webkit-scrollbar {
+                display: none;
+            }
+            
+            #filter-suggestions {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                padding-bottom: 8px;
+            }
+            
+            .filter-pill-active,
+            .filter-pill-suggestion {
+                flex-shrink: 0;
+            }
+        }
     </style>
 </head>
 <body class="h-full bg-gray-50 font-sans text-gray-900 antialiased">

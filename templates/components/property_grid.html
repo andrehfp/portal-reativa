@@ -1,3 +1,51 @@
+<!-- Filter Pills Section -->
+{% if active_filters or filter_suggestions %}
+    <div class="mb-8">
+        <!-- Active Filters -->
+        {% if active_filters %}
+            <div class="flex flex-wrap gap-2 mb-4" id="active-filters">
+                {% for filter in active_filters %}
+                    <div class="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-full filter-pill-active">
+                        <span>{{ filter.label }}</span>
+                        {% if filter.remove_query is defined %}
+                            <button class="ml-1 hover:bg-white/20 rounded-full p-0.5 transition-colors"
+                                    hx-get="/search?q={{ filter.remove_query | urlencode }}" 
+                                    hx-target="#search-results"
+                                    hx-push-url="true"
+                                    title="Remover filtro">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+        
+        <!-- Filter Suggestions -->
+        {% if filter_suggestions %}
+            <div class="flex flex-wrap gap-2 mb-6" id="filter-suggestions">
+                {% for suggestion in filter_suggestions %}
+                    <button class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm rounded-full hover:border-gray-400 hover:bg-gray-50 transition-all filter-pill-suggestion"
+                            hx-get="/search?q={{ suggestion.add_query | urlencode }}" 
+                            hx-target="#search-results"
+                            hx-push-url="true"
+                            title="Adicionar filtro">
+                        <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                        </svg>
+                        <span>{{ suggestion.label }}</span>
+                        {% if suggestion.count %}
+                            <span class="text-xs text-gray-400">({{ suggestion.count }})</span>
+                        {% endif %}
+                    </button>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+{% endif %}
+
 {% if total > 0 %}
     <!-- Results Count -->
     <div class="mb-8 flex items-center justify-between">
