@@ -372,18 +372,38 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
     params = []
     query_lower = query.lower()
     
-    # Price filters - default to sale properties for price searches
+    # Expand abbreviations first and work with expanded query
+    expanded_query = expand_abbreviations(query_lower)
+    
+    # Enhanced price parsing - handle various price formats
     price_patterns = [
-        r'até (\d+)k', r'até (\d+) mil', r'máximo (\d+)k', r'max (\d+)k',
-        r'acima de (\d+)k', r'mais de (\d+)k', r'mínimo (\d+)k', r'min (\d+)k'
+        # Handle raw numbers (likely rent prices)
+        (r'até (\d{3,})', lambda x: int(x)),  # até 1500, até 2500 (raw values)
+        (r'acima de (\d{3,})', lambda x: int(x)),  # acima de 1500 (raw values)
+        
+        # Handle k format (thousands)
+        (r'até (\d+)k', lambda x: int(x) * 1000),  # até 200k = 200000
+        (r'acima de (\d+)k', lambda x: int(x) * 1000),  # acima de 300k = 300000
+        (r'máximo (\d+)k', lambda x: int(x) * 1000),  # máximo 500k
+        (r'mínimo (\d+)k', lambda x: int(x) * 1000),  # mínimo 100k
+        
+        # Handle mil format (thousands)
+        (r'até (\d+) mil', lambda x: int(x) * 1000),  # até 300 mil = 300000
+        (r'acima de (\d+) mil', lambda x: int(x) * 1000),  # acima de 200 mil = 200000
+        
+        # Handle milhões format (millions)
+        (r'até (\d+) milhões?', lambda x: int(x) * 1000000),  # até 2 milhões = 2000000
+        (r'acima de (\d+) milhões?', lambda x: int(x) * 1000000),  # acima de 1 milhão = 1000000
     ]
     
     price_found = False
     price_direction = None  # 'max' for até/máximo, 'min' for acima/mínimo
-    for pattern in price_patterns:
-        match = re.search(pattern, query_lower)
+    
+    for pattern, price_converter in price_patterns:
+        match = re.search(pattern, expanded_query)
         if match:
-            price_value = int(match.group(1)) * 1000
+            price_value = price_converter(match.group(1))
+            
             if 'até' in pattern or 'máximo' in pattern or 'max' in pattern:
                 conditions.append("price <= ?")
                 price_direction = 'max'
@@ -394,74 +414,98 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
             price_found = True
             break
     
-    # If price is specified but no transaction type, default to sale
-    if price_found and not any(word in query_lower for word in ['venda', 'comprar', 'compra', 'aluguel', 'alugar', 'locação']):
-        conditions.append("transaction_type = 'sale'")
-    
-    # Filter out properties with invalid prices when price filter is used
-    if price_found:
-        conditions.append("price > 0")
-    
-    # Property type filters
+    # Property type filters - use expanded query
     type_mapping = {
         'casa': 'Casa', 'casas': 'Casa',
         'apartamento': 'Apartamento', 'apartamentos': 'Apartamento',
         'apto': 'Apartamento', 'aptos': 'Apartamento',
         'terreno': 'Terreno', 'terrenos': 'Terreno',
         'sala': 'Sala', 'salas': 'Sala',
-        'loja': 'Loja', 'lojas': 'Loja'
+        'loja': 'Loja', 'lojas': 'Loja',
+        'kitnet': 'Kitnet'
     }
     
     for key, value in type_mapping.items():
-        if key in query_lower:
+        if key in expanded_query:
             conditions.append("type = ?")
             params.append(value)
             break
     
-    # Transaction type
-    if any(word in query_lower for word in ['venda', 'comprar', 'compra']):
+    # Enhanced transaction type parsing - only add once
+    transaction_type_set = False
+    if any(phrase in expanded_query for phrase in ['para venda', 'para vender', 'a venda', 'venda', 'comprar', 'compra']):
         conditions.append("transaction_type = 'sale'")
-    elif any(word in query_lower for word in ['aluguel', 'alugar', 'locação']):
+        transaction_type_set = True
+    elif any(phrase in expanded_query for phrase in ['para alugar', 'para aluguel', 'aluguel', 'alugar', 'locação']):
         conditions.append("transaction_type = 'rent'")
+        transaction_type_set = True
     
-    # Enhanced location filters - prioritize exact neighborhood matches
-    location_words = re.findall(r'(?:no|na|em)\s+([a-záêâôõç\s]+?)(?:\s+(?:até|acima|para|com|\d)|$)', query_lower)
-    for location in location_words:
-        location = location.strip()
-        if location:
-            # Priority search: exact match > starts with > contains > city match
-            conditions.append("""(
-                LOWER(neighborhood) = ? OR 
-                LOWER(neighborhood) LIKE ? OR 
-                LOWER(city) = ? OR
-                LOWER(address) LIKE ?
-            )""")
-            exact_term = location.lower()
-            starts_with_term = f"{location.lower()}%"
-            address_term = f"%{location.lower()}%"
-            params.extend([exact_term, starts_with_term, exact_term, address_term])
+    # If price is specified but no transaction type, default to sale
+    if price_found and not transaction_type_set:
+        conditions.append("transaction_type = 'sale'")
     
-    # Also handle direct location searches (without prepositions)
-    # Look for location names that aren't already captured
-    remaining_query = query_lower
-    # Remove already processed parts (prices, types, transactions, preposition locations)
-    for pattern in [r'até \d+k?', r'acima de \d+k?', r'para (?:venda|aluguel)', r'(?:casa|apartamento|terreno)s?', r'(?:no|na|em)\s+[a-záêâôõç\s]+']:
-        remaining_query = re.sub(pattern, '', remaining_query)
+    # Filter out properties with invalid prices when price filter is used
+    if price_found:
+        conditions.append("price > 0")
     
-    remaining_query = remaining_query.strip()
-    if remaining_query and len(remaining_query.split()) >= 2:
-        # Likely a compound location name (like "jardim carvalho", "vila liane")
-        conditions.append("""(
-            LOWER(neighborhood) = ? OR 
-            LOWER(neighborhood) LIKE ? OR 
-            LOWER(city) = ?
-        )""")
-        exact_term = remaining_query.lower()
-        starts_with_term = f"{remaining_query.lower()}%"
-        params.extend([exact_term, starts_with_term, exact_term])
+    # Enhanced location parsing - handle compound locations better
+    # Parse the entire query for location information
+    all_location_terms = []
     
-    # Bedrooms
-    bedroom_match = re.search(r'(\d+)\s*(?:quartos?|dormitórios?)', query_lower)
+    # Extract locations with prepositions (no|na|em)
+    location_matches = re.findall(r'(?:no|na|em)\s+([a-záêâôõç\s]+?)(?:\s+(?:até|acima|para|com|de\s+[a-z]+|\d)|$)', expanded_query)
+    for location in location_matches:
+        all_location_terms.append(location.strip())
+    
+    # Extract compound locations like "centro de ponta grossa"
+    compound_matches = re.findall(r'([a-záêâôõç]+)\s+de\s+([a-záêâôõç\s]+)', expanded_query)
+    for neighborhood, city in compound_matches:
+        # Add the compound location as a single term
+        all_location_terms.append(f"{neighborhood} de {city}")
+    
+    # Process all location terms and create a single comprehensive condition
+    if all_location_terms:
+        location_conditions = []
+        location_params = []
+        
+        for location in all_location_terms:
+            if ' de ' in location:
+                # Handle compound locations (e.g., "centro de ponta grossa")
+                parts = location.split(' de ')
+                neighborhood = parts[0].strip()
+                city = parts[1].strip()
+                
+                # Add specific neighborhood + city condition
+                location_conditions.append("(LOWER(neighborhood) LIKE ? AND LOWER(city) LIKE ?)")
+                location_params.extend([f"%{neighborhood}%", f"%{city}%"])
+                
+                # Also add individual neighborhood and city conditions as fallback
+                location_conditions.extend([
+                    "LOWER(neighborhood) LIKE ?",
+                    "LOWER(city) LIKE ?"
+                ])
+                location_params.extend([f"%{neighborhood}%", f"%{city}%"])
+            else:
+                # Single location term - search in all location fields
+                location_conditions.extend([
+                    "LOWER(neighborhood) = ?",
+                    "LOWER(neighborhood) LIKE ?", 
+                    "LOWER(city) = ?",
+                    "LOWER(address) LIKE ?"
+                ])
+                exact_term = location.lower()
+                starts_with_term = f"{location.lower()}%"
+                address_term = f"%{location.lower()}%"
+                location_params.extend([exact_term, starts_with_term, exact_term, address_term])
+        
+        # Combine all location conditions with OR
+        if location_conditions:
+            combined_location_condition = "(" + " OR ".join(location_conditions) + ")"
+            conditions.append(combined_location_condition)
+            params.extend(location_params)
+    
+    # Bedrooms parsing
+    bedroom_match = re.search(r'(\d+)\s*(?:quartos?|dormitórios?)', expanded_query)
     if bedroom_match:
         bedrooms = int(bedroom_match.group(1))
         conditions.append("bedrooms >= ?")
@@ -470,7 +514,8 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
     # Return metadata about the search
     search_metadata = {
         'price_found': price_found,
-        'price_direction': price_direction  # 'max' for "até", 'min' for "acima"
+        'price_direction': price_direction,
+        'expanded_query': expanded_query
     }
     
     return conditions, params, search_metadata
