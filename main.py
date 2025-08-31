@@ -182,119 +182,343 @@ def get_property_by_id(property_id: int) -> Dict[str, Any]:
     conn.close()
     return property_data
 
-def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+# Property abbreviation dictionary for common Brazilian real estate terms
+PROPERTY_ABBREVIATIONS = {
+    # Location prefixes
+    'jd': 'jardim',
+    'jrd': 'jardim',
+    'vl': 'vila',
+    'pq': 'parque',
+    'st': 'santo',
+    'sta': 'santa',
+    'res': 'residencial',
+    'cond': 'condomínio',
+    'cjto': 'conjunto',
     
-    # Parse natural language query
-    conditions, params = parse_search_query(query)
+    # Property types
+    'ap': 'apartamento',
+    'apto': 'apartamento',
+    'aptos': 'apartamentos',
+    'ed': 'edifício',
+    'cj': 'conjunto',
+    'sl': 'sala',
     
-    # Build SQL query
-    base_query = """
-        SELECT * FROM properties 
-        WHERE status = 'active'
-    """
+    # Streets and addresses
+    'av': 'avenida',
+    'r': 'rua',
+    'trav': 'travessa',
+    'al': 'alameda',
+    'pca': 'praça',
+    'est': 'estrada',
     
-    if conditions:
-        base_query += " AND " + " AND ".join(conditions)
+    # Common city abbreviations (Brazil)
+    'ctba': 'curitiba',
+    'cwb': 'curitiba',
+    'bc': 'balneário camboriú',
+    'sp': 'são paulo',
+    'rj': 'rio de janeiro',
+    'bh': 'belo horizonte',
+    'poa': 'porto alegre',
+    'rec': 'recife',
+    'ssalvador': 'salvador',
+    'bsb': 'brasília',
     
-    # Count total results
-    count_query = f"SELECT COUNT(*) as total FROM ({base_query})"
-    cursor = conn.execute(count_query, params)
-    total = cursor.fetchone()['total']
-    
-    # Get paginated results
-    base_query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-    offset = (page - 1) * per_page
-    cursor = conn.execute(base_query, params + [per_page, offset])
-    
-    properties = []
-    for row in cursor.fetchall():
-        prop = dict(row)
-        # Parse JSON fields
-        if prop['images']:
-            try:
-                prop['images'] = json.loads(prop['images'])
-            except:
-                prop['images'] = []
-        if prop['features']:
-            try:
-                prop['features'] = json.loads(prop['features'])
-            except:
-                prop['features'] = []
-        
-        # Format price
-        if prop['price']:
-            prop['formatted_price'] = format_price(prop['price'])
-        
-        # Generate slug for SEO-friendly URLs
-        prop['slug'] = generate_property_slug(prop)
-        
-        properties.append(prop)
-    
-    conn.close()
-    return properties, total
+    # Real estate specific terms
+    'imov': 'imóvel',
+    'imovel': 'imóvel',
+    'cobertura': 'cobertura',
+    'duplex': 'duplex',
+    'triplex': 'triplex',
+    'studio': 'studio',
+    'loft': 'loft',
+    'sobrado': 'sobrado',
+    'chacara': 'chácara',
+    'sitio': 'sítio',
+    'fazenda': 'fazenda',
+    'terreno': 'terreno',
+    'lote': 'lote',
+    'galpao': 'galpão',
+    'comercial': 'comercial',
+    'industrial': 'industrial'
+}
 
-def parse_search_query(query: str) -> tuple[List[str], List[Any]]:
+def expand_abbreviations(text: str) -> str:
+    """
+    Expand common real estate abbreviations in the search text.
+    
+    Args:
+        text: Original search query text
+        
+    Returns:
+        Text with abbreviations expanded
+    """
+    if not text:
+        return text
+        
+    # Split into words and process each
+    words = text.lower().split()
+    expanded_words = []
+    
+    for word in words:
+        # Remove punctuation for matching but preserve it
+        clean_word = re.sub(r'[^\w]', '', word)
+        
+        # Check if the clean word is an abbreviation
+        if clean_word in PROPERTY_ABBREVIATIONS:
+            # Replace the clean part but preserve any punctuation
+            expanded_word = word.replace(clean_word, PROPERTY_ABBREVIATIONS[clean_word])
+            expanded_words.append(expanded_word)
+        else:
+            expanded_words.append(word)
+    
+    return ' '.join(expanded_words)
+
+def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        
+        # Expand abbreviations before parsing
+        expanded_query = expand_abbreviations(query)
+        
+        # Parse natural language query
+        conditions, params, search_metadata = parse_search_query(expanded_query)
+        
+        # Build SQL query
+        base_query = """
+            SELECT * FROM properties 
+            WHERE status = 'active'
+        """
+        
+        if conditions:
+            base_query += " AND " + " AND ".join(conditions)
+        
+        # Count total results
+        count_query = """
+            SELECT COUNT(*) as total FROM properties 
+            WHERE status = 'active'
+        """
+        
+        if conditions:
+            count_query += " AND " + " AND ".join(conditions)
+        
+        cursor = conn.execute(count_query, params)
+        total = cursor.fetchone()['total']
+        
+        # Smart ordering based on search type
+        if search_metadata['price_found']:
+            if search_metadata['price_direction'] == 'max':
+                # For "até 500k", show expensive properties first (closer to limit)
+                order_clause = " ORDER BY price DESC, created_at DESC"
+            else:
+                # For "acima de 200k", show cheaper properties first (closer to minimum)
+                order_clause = " ORDER BY price ASC, created_at DESC"
+        else:
+            # Default ordering by recency
+            order_clause = " ORDER BY created_at DESC"
+        
+        # Get paginated results
+        base_query += order_clause + " LIMIT ? OFFSET ?"
+        offset = (page - 1) * per_page
+        cursor = conn.execute(base_query, params + [per_page, offset])
+        
+        properties = []
+        for row in cursor.fetchall():
+            prop = dict(row)
+            # Parse JSON fields
+            if prop['images']:
+                try:
+                    prop['images'] = json.loads(prop['images'])
+                except json.JSONDecodeError:
+                    prop['images'] = []
+            else:
+                prop['images'] = []
+                
+            if prop['features']:
+                try:
+                    prop['features'] = json.loads(prop['features'])
+                except json.JSONDecodeError:
+                    prop['features'] = []
+            else:
+                prop['features'] = []
+            
+            # Format price
+            if prop['price']:
+                prop['formatted_price'] = format_price(prop['price'])
+            
+            # Generate slug for SEO-friendly URLs
+            prop['slug'] = generate_property_slug(prop)
+            
+            properties.append(prop)
+        
+        conn.close()
+        return properties, total
+        
+    except sqlite3.Error as e:
+        print(f"Database error in search_properties: {e}")
+        # Return empty results on database error
+        if 'conn' in locals():
+            conn.close()
+        return [], 0
+    except Exception as e:
+        print(f"Unexpected error in search_properties: {e}")
+        # Return empty results on any other error
+        if 'conn' in locals():
+            conn.close()
+        return [], 0
+
+def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
     conditions = []
     params = []
     query_lower = query.lower()
     
-    # Price filters
+    # Expand abbreviations first and work with expanded query
+    expanded_query = expand_abbreviations(query_lower)
+    
+    # Enhanced price parsing - handle various price formats
     price_patterns = [
-        r'até (\d+)k', r'até (\d+) mil', r'máximo (\d+)k', r'max (\d+)k',
-        r'acima de (\d+)k', r'mais de (\d+)k', r'mínimo (\d+)k', r'min (\d+)k'
+        # Handle raw numbers (likely rent prices)
+        (r'até (\d{3,})', lambda x: int(x)),  # até 1500, até 2500 (raw values)
+        (r'acima de (\d{3,})', lambda x: int(x)),  # acima de 1500 (raw values)
+        
+        # Handle k format (thousands)
+        (r'até (\d+)k', lambda x: int(x) * 1000),  # até 200k = 200000
+        (r'acima de (\d+)k', lambda x: int(x) * 1000),  # acima de 300k = 300000
+        (r'máximo (\d+)k', lambda x: int(x) * 1000),  # máximo 500k
+        (r'mínimo (\d+)k', lambda x: int(x) * 1000),  # mínimo 100k
+        
+        # Handle mil format (thousands)
+        (r'até (\d+) mil', lambda x: int(x) * 1000),  # até 300 mil = 300000
+        (r'acima de (\d+) mil', lambda x: int(x) * 1000),  # acima de 200 mil = 200000
+        
+        # Handle milhões format (millions)
+        (r'até (\d+) milhões?', lambda x: int(x) * 1000000),  # até 2 milhões = 2000000
+        (r'acima de (\d+) milhões?', lambda x: int(x) * 1000000),  # acima de 1 milhão = 1000000
     ]
     
-    for pattern in price_patterns:
-        match = re.search(pattern, query_lower)
+    price_found = False
+    price_direction = None  # 'max' for até/máximo, 'min' for acima/mínimo
+    
+    for pattern, price_converter in price_patterns:
+        match = re.search(pattern, expanded_query)
         if match:
-            price_value = int(match.group(1)) * 1000
+            price_value = price_converter(match.group(1))
+            
             if 'até' in pattern or 'máximo' in pattern or 'max' in pattern:
                 conditions.append("price <= ?")
+                price_direction = 'max'
             else:
                 conditions.append("price >= ?")
+                price_direction = 'min'
             params.append(price_value)
+            price_found = True
+            break
     
-    # Property type filters
+    # Property type filters - use expanded query
     type_mapping = {
         'casa': 'Casa', 'casas': 'Casa',
         'apartamento': 'Apartamento', 'apartamentos': 'Apartamento',
         'apto': 'Apartamento', 'aptos': 'Apartamento',
         'terreno': 'Terreno', 'terrenos': 'Terreno',
         'sala': 'Sala', 'salas': 'Sala',
-        'loja': 'Loja', 'lojas': 'Loja'
+        'loja': 'Loja', 'lojas': 'Loja',
+        'kitnet': 'Kitnet'
     }
     
     for key, value in type_mapping.items():
-        if key in query_lower:
+        if key in expanded_query:
             conditions.append("type = ?")
             params.append(value)
             break
     
-    # Transaction type
-    if any(word in query_lower for word in ['venda', 'comprar', 'compra']):
+    # Enhanced transaction type parsing - only add once
+    transaction_type_set = False
+    if any(phrase in expanded_query for phrase in ['para venda', 'para vender', 'a venda', 'venda', 'comprar', 'compra']):
         conditions.append("transaction_type = 'sale'")
-    elif any(word in query_lower for word in ['aluguel', 'alugar', 'locação']):
+        transaction_type_set = True
+    elif any(phrase in expanded_query for phrase in ['para alugar', 'para aluguel', 'aluguel', 'alugar', 'locação']):
         conditions.append("transaction_type = 'rent'")
+        transaction_type_set = True
     
-    # Location filters (neighborhood, city)
-    location_words = re.findall(r'(?:no|na|em)\s+([a-záêâôõç\s]+?)(?:\s|$)', query_lower)
-    for location in location_words:
-        location = location.strip()
-        if location:
-            conditions.append("(LOWER(neighborhood) LIKE ? OR LOWER(city) LIKE ? OR LOWER(address) LIKE ?)")
-            like_term = f"%{location}%"
-            params.extend([like_term, like_term, like_term])
+    # If price is specified but no transaction type, default to sale
+    if price_found and not transaction_type_set:
+        conditions.append("transaction_type = 'sale'")
     
-    # Bedrooms
-    bedroom_match = re.search(r'(\d+)\s*(?:quartos?|dormitórios?)', query_lower)
+    # Filter out properties with invalid prices when price filter is used
+    if price_found:
+        conditions.append("price > 0")
+    
+    # Enhanced location parsing - handle compound locations better
+    # Parse the entire query for location information
+    all_location_terms = []
+    
+    # Extract locations with prepositions (no|na|em)
+    location_matches = re.findall(r'(?:no|na|em)\s+([a-záêâôõç\s]+?)(?:\s+(?:até|acima|para|com|de\s+[a-z]+|\d)|$)', expanded_query)
+    for location in location_matches:
+        all_location_terms.append(location.strip())
+    
+    # Extract compound locations like "centro de ponta grossa"
+    compound_matches = re.findall(r'([a-záêâôõç]+)\s+de\s+([a-záêâôõç\s]+)', expanded_query)
+    for neighborhood, city in compound_matches:
+        # Add the compound location as a single term
+        all_location_terms.append(f"{neighborhood} de {city}")
+    
+    # Process all location terms and create a single comprehensive condition
+    if all_location_terms:
+        location_conditions = []
+        location_params = []
+        
+        for location in all_location_terms:
+            if ' de ' in location:
+                # Handle compound locations (e.g., "centro de ponta grossa")
+                parts = location.split(' de ')
+                neighborhood = parts[0].strip()
+                city = parts[1].strip()
+                
+                # Add specific neighborhood + city condition
+                location_conditions.append("(LOWER(neighborhood) LIKE ? AND LOWER(city) LIKE ?)")
+                location_params.extend([f"%{neighborhood}%", f"%{city}%"])
+                
+                # Also add individual neighborhood and city conditions as fallback
+                location_conditions.extend([
+                    "LOWER(neighborhood) LIKE ?",
+                    "LOWER(city) LIKE ?"
+                ])
+                location_params.extend([f"%{neighborhood}%", f"%{city}%"])
+            else:
+                # Single location term - search in all location fields
+                location_conditions.extend([
+                    "LOWER(neighborhood) = ?",
+                    "LOWER(neighborhood) LIKE ?", 
+                    "LOWER(city) = ?",
+                    "LOWER(address) LIKE ?"
+                ])
+                exact_term = location.lower()
+                starts_with_term = f"{location.lower()}%"
+                address_term = f"%{location.lower()}%"
+                location_params.extend([exact_term, starts_with_term, exact_term, address_term])
+        
+        # Combine all location conditions with OR
+        if location_conditions:
+            combined_location_condition = "(" + " OR ".join(location_conditions) + ")"
+            conditions.append(combined_location_condition)
+            params.extend(location_params)
+    
+    # Bedrooms parsing
+    bedroom_match = re.search(r'(\d+)\s*(?:quartos?|dormitórios?)', expanded_query)
     if bedroom_match:
         bedrooms = int(bedroom_match.group(1))
         conditions.append("bedrooms >= ?")
         params.append(bedrooms)
     
-    return conditions, params
+    # Return metadata about the search
+    search_metadata = {
+        'price_found': price_found,
+        'price_direction': price_direction,
+        'expanded_query': expanded_query
+    }
+    
+    return conditions, params, search_metadata
 
 def generate_property_slug(property_data: Dict[str, Any]) -> str:
     """Generate SEO-friendly slug for property"""
