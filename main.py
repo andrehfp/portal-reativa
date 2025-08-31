@@ -46,13 +46,19 @@ async def search_api(request: Request, q: str = Query(...), page: int = 1):
     properties, total = search_properties(q, page, 12)
     total_pages = (total + 12 - 1) // 12
     
+    # Generate filter data for the UI
+    active_filters = extract_active_filters(q)
+    filter_suggestions = generate_filter_suggestions(q, properties, total)
+    
     return templates.TemplateResponse("components/property_grid.html", {
         "request": request,
         "properties": properties,
         "query": q,
         "current_page": page,
         "total_pages": total_pages,
-        "total": total
+        "total": total,
+        "active_filters": active_filters,
+        "filter_suggestions": filter_suggestions
     })
 
 @app.get("/imovel/{slug}", response_class=HTMLResponse)
@@ -367,6 +373,284 @@ def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[Li
             conn.close()
         return [], 0
 
+def extract_active_filters(query: str) -> List[Dict[str, str]]:
+    """
+    Extract active filters from the search query for display as pills.
+    
+    Returns:
+        List of filter dictionaries with type, value, label, and remove_query keys
+    """
+    if not query:
+        return []
+    
+    active_filters = []
+    query_lower = query.lower()
+    expanded_query = expand_abbreviations(query_lower)
+    
+    # Price filters
+    price_patterns = [
+        (r'até (\d+)k', lambda x: f"Até R$ {int(x) * 1000:,}".replace(",", "."), 'price'),
+        (r'acima de (\d+)k', lambda x: f"Acima de R$ {int(x) * 1000:,}".replace(",", "."), 'price'),
+        (r'até (\d+) mil', lambda x: f"Até R$ {int(x) * 1000:,}".replace(",", "."), 'price'),
+        (r'acima de (\d+) mil', lambda x: f"Acima de R$ {int(x) * 1000:,}".replace(",", "."), 'price'),
+        (r'até (\d{3,})', lambda x: f"Até R$ {int(x):,}".replace(",", "."), 'price'),
+        (r'acima de (\d{3,})', lambda x: f"Acima de R$ {int(x):,}".replace(",", "."), 'price'),
+    ]
+    
+    for pattern, label_func, filter_type in price_patterns:
+        match = re.search(pattern, expanded_query)
+        if match:
+            label = label_func(match.group(1))
+            # Create query without this price filter for removal
+            remove_query = re.sub(pattern, '', expanded_query).strip()
+            remove_query = re.sub(r'\s+', ' ', remove_query)  # Clean up extra spaces
+            
+            active_filters.append({
+                'type': filter_type,
+                'value': match.group(0),
+                'label': label,
+                'remove_query': remove_query if remove_query != expanded_query else ''
+            })
+            break
+    
+    # Property type filters
+    type_mapping = {
+        'casa': 'Casa', 'casas': 'Casa',
+        'apartamento': 'Apartamento', 'apartamentos': 'Apartamento',
+        'apto': 'Apartamento', 'aptos': 'Apartamento',
+        'terreno': 'Terreno', 'terrenos': 'Terreno',
+        'sala': 'Sala', 'salas': 'Sala',
+        'loja': 'Loja', 'lojas': 'Loja',
+        'kitnet': 'Kitnet'
+    }
+    
+    for key, value in type_mapping.items():
+        if key in expanded_query:
+            # Create query without this property type for removal
+            remove_query = expanded_query.replace(key, '').strip()
+            remove_query = re.sub(r'\s+', ' ', remove_query)  # Clean up extra spaces
+            
+            active_filters.append({
+                'type': 'property_type',
+                'value': key,
+                'label': value,
+                'remove_query': remove_query if remove_query != expanded_query else ''
+            })
+            break
+    
+    # Location filters
+    location_matches = re.findall(r'(?:no|na|em)\s+([a-záêâôõç\s]+?)(?:\s+(?:até|acima|para|com|de\s+[a-z]+|\d)|$)', expanded_query)
+    for location in location_matches:
+        location = location.strip()
+        if location:
+            # Create query without this location for removal
+            location_pattern = f'(?:no|na|em)\\s+{re.escape(location)}'
+            remove_query = re.sub(location_pattern, '', expanded_query, flags=re.IGNORECASE).strip()
+            remove_query = re.sub(r'\s+', ' ', remove_query)  # Clean up extra spaces
+            
+            active_filters.append({
+                'type': 'location',
+                'value': location,
+                'label': location.title(),
+                'remove_query': remove_query if remove_query != expanded_query else ''
+            })
+    
+    # Bedrooms filter
+    bedroom_match = re.search(r'(\d+)\s*(?:quartos?|dormitórios?)', expanded_query)
+    if bedroom_match:
+        bedrooms = bedroom_match.group(1)
+        label = f"{bedrooms} quarto{'s' if int(bedrooms) > 1 else ''}"
+        
+        # Create query without this bedroom filter for removal
+        bedroom_pattern = r'\d+\s*(?:quartos?|dormitórios?)'
+        remove_query = re.sub(bedroom_pattern, '', expanded_query).strip()
+        remove_query = re.sub(r'\s+', ' ', remove_query)  # Clean up extra spaces
+        
+        active_filters.append({
+            'type': 'bedrooms',
+            'value': bedrooms,
+            'label': label,
+            'remove_query': remove_query if remove_query != expanded_query else ''
+        })
+    
+    # Transaction type filters
+    if any(phrase in expanded_query for phrase in ['para venda', 'para vender', 'a venda', 'venda']):
+        remove_phrases = ['para venda', 'para vender', 'a venda', 'venda']
+        remove_query = expanded_query
+        for phrase in remove_phrases:
+            remove_query = remove_query.replace(phrase, '')
+        remove_query = re.sub(r'\s+', ' ', remove_query.strip())
+        
+        active_filters.append({
+            'type': 'transaction_type',
+            'value': 'sale',
+            'label': 'Venda',
+            'remove_query': remove_query if remove_query != expanded_query else ''
+        })
+    elif any(phrase in expanded_query for phrase in ['para alugar', 'para aluguel', 'aluguel', 'alugar']):
+        remove_phrases = ['para alugar', 'para aluguel', 'aluguel', 'alugar']
+        remove_query = expanded_query
+        for phrase in remove_phrases:
+            remove_query = remove_query.replace(phrase, '')
+        remove_query = re.sub(r'\s+', ' ', remove_query.strip())
+        
+        active_filters.append({
+            'type': 'transaction_type',
+            'value': 'rent',
+            'label': 'Aluguel',
+            'remove_query': remove_query if remove_query != expanded_query else ''
+        })
+    
+    return active_filters
+
+
+def generate_filter_suggestions(query: str, properties: List[Dict], total_results: int) -> List[Dict[str, Any]]:
+    """
+    Generate contextual filter suggestions based on the current search and results.
+    
+    Returns:
+        List of suggestion dictionaries with type, value, label, count, and add_query keys
+    """
+    if not query or total_results == 0:
+        return []
+    
+    suggestions = []
+    query_lower = query.lower()
+    expanded_query = expand_abbreviations(query_lower)
+    
+    # Get database connection to run suggestion queries
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        
+        # Parse current query to understand what's already filtered
+        current_conditions, current_params, search_metadata = parse_search_query(expanded_query)
+        
+        base_query = """
+            SELECT COUNT(*) as count FROM properties 
+            WHERE status = 'active'
+        """
+        
+        if current_conditions:
+            base_query += " AND " + " AND ".join(current_conditions)
+        
+        # Suggest price ranges if no price filter exists
+        if not search_metadata.get('price_found'):
+            price_suggestions = [
+                ('até 300k', 'Até R$ 300k', 300000, '<='),
+                ('até 500k', 'Até R$ 500k', 500000, '<='),
+                ('até 1 milhão', 'Até R$ 1M', 1000000, '<='),
+                ('acima de 200k', 'Acima de R$ 200k', 200000, '>='),
+                ('acima de 500k', 'Acima de R$ 500k', 500000, '>='),
+            ]
+            
+            for value, label, price_num, operator in price_suggestions:
+                price_query = base_query + f" AND price {operator} ? AND price > 0"
+                cursor = conn.execute(price_query, current_params + [price_num])
+                count = cursor.fetchone()['count']
+                
+                if count > 0:
+                    add_query = f"{query} {value}".strip()
+                    suggestions.append({
+                        'type': 'price',
+                        'value': value,
+                        'label': label,
+                        'count': count,
+                        'add_query': add_query
+                    })
+        
+        # Suggest property types if no type filter exists
+        has_property_type = any(ptype in expanded_query for ptype in ['casa', 'apartamento', 'terreno', 'sala', 'loja', 'kitnet'])
+        if not has_property_type:
+            type_suggestions = [
+                ('apartamento', 'Apartamento', 'Apartamento'),
+                ('casa', 'Casa', 'Casa'),
+                ('terreno', 'Terreno', 'Terreno'),
+            ]
+            
+            for value, label, db_type in type_suggestions:
+                type_query = base_query + " AND type = ?"
+                cursor = conn.execute(type_query, current_params + [db_type])
+                count = cursor.fetchone()['count']
+                
+                if count > 0:
+                    add_query = f"{query} {value}".strip()
+                    suggestions.append({
+                        'type': 'property_type',
+                        'value': value,
+                        'label': label,
+                        'count': count,
+                        'add_query': add_query
+                    })
+        
+        # Suggest bedrooms if no bedroom filter exists
+        has_bedrooms = re.search(r'\d+\s*(?:quartos?|dormitórios?)', expanded_query)
+        if not has_bedrooms:
+            bedroom_suggestions = [
+                ('2 quartos', '2 quartos', 2),
+                ('3 quartos', '3 quartos', 3),
+                ('4 quartos', '4+ quartos', 4),
+            ]
+            
+            for value, label, bedroom_count in bedroom_suggestions:
+                bedroom_query = base_query + " AND bedrooms >= ?"
+                cursor = conn.execute(bedroom_query, current_params + [bedroom_count])
+                count = cursor.fetchone()['count']
+                
+                if count > 0:
+                    add_query = f"{query} {value}".strip()
+                    suggestions.append({
+                        'type': 'bedrooms',
+                        'value': value,
+                        'label': label,
+                        'count': count,
+                        'add_query': add_query
+                    })
+        
+        # Suggest popular neighborhoods based on current results
+        has_location = re.search(r'(?:no|na|em)\s+([a-záêâôõç\s]+)', expanded_query)
+        if not has_location and properties:
+            # Get top neighborhoods from current results
+            neighborhoods = {}
+            for prop in properties[:10]:  # Check first 10 properties
+                if prop.get('neighborhood'):
+                    neighborhood = prop['neighborhood'].lower()
+                    neighborhoods[neighborhood] = neighborhoods.get(neighborhood, 0) + 1
+            
+            # Suggest top neighborhoods
+            for neighborhood, _ in sorted(neighborhoods.items(), key=lambda x: x[1], reverse=True)[:3]:
+                neighborhood_query = base_query + " AND LOWER(neighborhood) LIKE ?"
+                cursor = conn.execute(neighborhood_query, current_params + [f"%{neighborhood}%"])
+                count = cursor.fetchone()['count']
+                
+                if count > 0:
+                    add_query = f"{query} no {neighborhood}".strip()
+                    suggestions.append({
+                        'type': 'location',
+                        'value': f"no {neighborhood}",
+                        'label': neighborhood.title(),
+                        'count': count,
+                        'add_query': add_query
+                    })
+        
+        conn.close()
+        
+        # Sort suggestions by count (most results first) and limit to 5
+        suggestions.sort(key=lambda x: x['count'], reverse=True)
+        return suggestions[:5]
+        
+    except sqlite3.Error as e:
+        print(f"Database error in generate_filter_suggestions: {e}")
+        if 'conn' in locals():
+            conn.close()
+        return []
+    except Exception as e:
+        print(f"Error generating filter suggestions: {e}")
+        if 'conn' in locals():
+            conn.close()
+        return []
+
+
 def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
     conditions = []
     params = []
@@ -376,11 +660,8 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
     expanded_query = expand_abbreviations(query_lower)
     
     # Enhanced price parsing - handle various price formats
+    # IMPORTANT: Order matters! More specific patterns (k, mil, milhões) must come BEFORE general patterns
     price_patterns = [
-        # Handle raw numbers (likely rent prices)
-        (r'até (\d{3,})', lambda x: int(x)),  # até 1500, até 2500 (raw values)
-        (r'acima de (\d{3,})', lambda x: int(x)),  # acima de 1500 (raw values)
-        
         # Handle k format (thousands)
         (r'até (\d+)k', lambda x: int(x) * 1000),  # até 200k = 200000
         (r'acima de (\d+)k', lambda x: int(x) * 1000),  # acima de 300k = 300000
@@ -394,6 +675,10 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
         # Handle milhões format (millions)
         (r'até (\d+) milhões?', lambda x: int(x) * 1000000),  # até 2 milhões = 2000000
         (r'acima de (\d+) milhões?', lambda x: int(x) * 1000000),  # acima de 1 milhão = 1000000
+        
+        # Handle raw numbers (likely rent prices) - MUST BE LAST
+        (r'até (\d{3,})', lambda x: int(x)),  # até 1500, até 2500 (raw values)
+        (r'acima de (\d{3,})', lambda x: int(x)),  # acima de 1500 (raw values)
     ]
     
     price_found = False
