@@ -9,7 +9,7 @@
                         <span>{{ filter.label }}</span>
                         {% if filter.remove_query is defined %}
                             <button class="ml-1 hover:bg-white/20 rounded-full p-0.5 transition-colors"
-                                    hx-get="/search?q={{ filter.remove_query | urlencode }}" 
+                                    hx-get="/search?q={{ filter.remove_query | urlencode }}&sort={{ current_sort }}" 
                                     hx-target="#search-results"
                                     hx-push-url="true"
                                     title="Remover filtro">
@@ -28,7 +28,7 @@
             <div class="flex flex-wrap gap-2 mb-6" id="filter-suggestions">
                 {% for suggestion in filter_suggestions %}
                     <button class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm rounded-full hover:border-gray-400 hover:bg-gray-50 transition-all filter-pill-suggestion"
-                            hx-get="/search?q={{ suggestion.add_query | urlencode }}" 
+                            hx-get="/search?q={{ suggestion.add_query | urlencode }}&sort={{ current_sort }}" 
                             hx-target="#search-results"
                             hx-push-url="true"
                             title="Adicionar filtro">
@@ -59,11 +59,17 @@
                 <button class="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700">Lista</button>
             </div>
             <!-- Sort -->
-            <select class="text-sm border-0 bg-gray-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500">
-                <option>Relevância</option>
-                <option>Menor preço</option>
-                <option>Maior preço</option>
-                <option>Mais recente</option>
+            <select class="text-sm border-0 bg-gray-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    hx-get="/search"
+                    hx-target="#search-results" 
+                    hx-include="[name='q'], [name='page']"
+                    hx-vals="js:{'sort': event.target.value, 'q': '{{ query }}', 'page': 1}"
+                    hx-trigger="change"
+                    name="sort">
+                <option value="relevance" {% if current_sort == 'relevance' %}selected{% endif %}>Relevância</option>
+                <option value="price_asc" {% if current_sort == 'price_asc' %}selected{% endif %}>Menor preço</option>
+                <option value="price_desc" {% if current_sort == 'price_desc' %}selected{% endif %}>Maior preço</option>
+                <option value="recent" {% if current_sort == 'recent' %}selected{% endif %}>Mais recente</option>
             </select>
         </div>
     </div>
@@ -163,7 +169,7 @@
     {% if total_pages > 1 %}
     <nav class="flex justify-center items-center space-x-2">
         {% if current_page > 1 %}
-            <button hx-get="/search?q={{ query }}&page={{ current_page - 1 }}" 
+            <button hx-get="/search?q={{ query }}&page={{ current_page - 1 }}&sort={{ current_sort }}" 
                     hx-target="#search-results"
                     class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -179,7 +185,7 @@
                         {{ page_num }}
                     </span>
                 {% elif page_num <= 3 or page_num >= total_pages - 2 or (page_num >= current_page - 1 and page_num <= current_page + 1) %}
-                    <button hx-get="/search?q={{ query }}&page={{ page_num }}" 
+                    <button hx-get="/search?q={{ query }}&page={{ page_num }}&sort={{ current_sort }}" 
                             hx-target="#search-results"
                             class="w-8 h-8 flex items-center justify-center text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                         {{ page_num }}
@@ -191,7 +197,7 @@
         </div>
         
         {% if current_page < total_pages %}
-            <button hx-get="/search?q={{ query }}&page={{ current_page + 1 }}" 
+            <button hx-get="/search?q={{ query }}&page={{ current_page + 1 }}&sort={{ current_sort }}" 
                     hx-target="#search-results"
                     class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
