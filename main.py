@@ -19,15 +19,15 @@ templates = Jinja2Templates(directory="templates")
 DB_PATH = "../reale-xml/conceito/data/properties.db"
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, q: Optional[str] = None, page: int = 1):
+async def home(request: Request, q: Optional[str] = None, page: int = 1, sort: str = "relevance"):
     properties = []
     total = 0
     per_page = 12
     
     if q:
-        properties, total = search_properties(q, page, per_page)
+        properties, total = search_properties(q, page, per_page, sort)
     else:
-        # Show recent properties when no search query
+        # Show recent properties when no search query (always use recency for home)
         properties, total = get_recent_properties(page, per_page)
     
     total_pages = (total + per_page - 1) // per_page
@@ -38,12 +38,13 @@ async def home(request: Request, q: Optional[str] = None, page: int = 1):
         "query": q or "",
         "current_page": page,
         "total_pages": total_pages,
-        "total": total
+        "total": total,
+        "current_sort": sort
     })
 
 @app.get("/search")
-async def search_api(request: Request, q: str = Query(...), page: int = 1):
-    properties, total = search_properties(q, page, 12)
+async def search_api(request: Request, q: str = Query(...), page: int = 1, sort: str = "relevance"):
+    properties, total = search_properties(q, page, 12, sort)
     total_pages = (total + 12 - 1) // 12
     
     # Generate filter data for the UI
@@ -57,6 +58,7 @@ async def search_api(request: Request, q: str = Query(...), page: int = 1):
         "current_page": page,
         "total_pages": total_pages,
         "total": total,
+        "current_sort": sort,
         "active_filters": active_filters,
         "filter_suggestions": filter_suggestions
     })
@@ -279,7 +281,7 @@ def expand_abbreviations(text: str) -> str:
     
     return ' '.join(expanded_words)
 
-def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
+def search_properties(query: str, page: int = 1, per_page: int = 12, sort: str = "relevance") -> tuple[List[Dict[str, Any]], int]:
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -311,16 +313,27 @@ def search_properties(query: str, page: int = 1, per_page: int = 12) -> tuple[Li
         cursor = conn.execute(count_query, params)
         total = cursor.fetchone()['total']
         
-        # Smart ordering based on search type
-        if search_metadata['price_found']:
-            if search_metadata['price_direction'] == 'max':
-                # For "até 500k", show expensive properties first (closer to limit)
-                order_clause = " ORDER BY price DESC, created_at DESC"
+        # Apply sorting based on user selection
+        if sort == "price_asc":
+            order_clause = " ORDER BY price ASC, created_at DESC"
+        elif sort == "price_desc":
+            order_clause = " ORDER BY price DESC, created_at DESC"
+        elif sort == "recent":
+            order_clause = " ORDER BY created_at DESC"
+        elif sort == "relevance":
+            # Smart ordering based on search context for relevance
+            if search_metadata['price_found']:
+                if search_metadata['price_direction'] == 'max':
+                    # For "até 500k", show expensive properties first (closer to limit)
+                    order_clause = " ORDER BY price DESC, created_at DESC"
+                else:
+                    # For "acima de 200k", show cheaper properties first (closer to minimum)
+                    order_clause = " ORDER BY price ASC, created_at DESC"
             else:
-                # For "acima de 200k", show cheaper properties first (closer to minimum)
-                order_clause = " ORDER BY price ASC, created_at DESC"
+                # Default relevance ordering by recency when no price context
+                order_clause = " ORDER BY created_at DESC"
         else:
-            # Default ordering by recency
+            # Fallback to recency for unknown sort values
             order_clause = " ORDER BY created_at DESC"
         
         # Get paginated results

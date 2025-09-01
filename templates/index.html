@@ -17,6 +17,8 @@
               hx-target="#search-results" 
               hx-trigger="submit, keyup changed delay:500ms from:input[name='q']"
               hx-indicator="#search-spinner">
+            <!-- Hidden sort field to maintain current sort -->
+            <input type="hidden" name="sort" value="{{ current_sort | default('relevance') }}">
             <div class="relative group">
                 <input 
                     type="text" 
@@ -45,19 +47,19 @@
         <!-- Quick Filters -->
         <div class="flex flex-wrap justify-center gap-3 mt-8">
             <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    hx-get="/search?q=casas" hx-target="#search-results">
+                    hx-get="/search?q=casas&sort={{ current_sort | default('relevance') }}" hx-target="#search-results">
                 Casas
             </button>
             <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    hx-get="/search?q=apartamentos" hx-target="#search-results">
+                    hx-get="/search?q=apartamentos&sort={{ current_sort | default('relevance') }}" hx-target="#search-results">
                 Apartamentos
             </button>
             <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    hx-get="/search?q=até 500k" hx-target="#search-results">
+                    hx-get="/search?q=até 500k&sort={{ current_sort | default('relevance') }}" hx-target="#search-results">
                 Até R$ 500k
             </button>
             <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    hx-get="/search?q=2 quartos" hx-target="#search-results">
+                    hx-get="/search?q=2 quartos&sort={{ current_sort | default('relevance') }}" hx-target="#search-results">
                 2+ Quartos
             </button>
         </div>
