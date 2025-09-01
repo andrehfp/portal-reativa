@@ -88,7 +88,7 @@
                     </div>
                     
                     <h1 class="text-3xl font-light text-gray-900 mb-3">
-                        {{ property.title }}
+                        {{ property.title | e }}
                     </h1>
                     
                     <div class="flex items-center text-gray-500 mb-6">
@@ -97,11 +97,11 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
                         <span>
-                            {% if property.address %}{{ property.address }}{% endif %}
-                            {% if property.neighborhood %}{% if property.address %}, {% endif %}{{ property.neighborhood }}{% endif %}
-                            {% if property.city %}{% if property.address or property.neighborhood %}, {% endif %}{{ property.city }}{% endif %}
-                            {% if property.state %}{% if property.address or property.neighborhood or property.city %}, {% endif %}{{ property.state }}{% endif %}
-                            {% if property.zipcode %}{% if property.address or property.neighborhood or property.city or property.state %} - {% endif %}{{ property.zipcode }}{% endif %}
+                            {% if property.address %}{{ property.address | e }}{% endif %}
+                            {% if property.neighborhood %}{% if property.address %}, {% endif %}{{ property.neighborhood | e }}{% endif %}
+                            {% if property.city %}{% if property.address or property.neighborhood %}, {% endif %}{{ property.city | e }}{% endif %}
+                            {% if property.state %}{% if property.address or property.neighborhood or property.city %}, {% endif %}{{ property.state | e }}{% endif %}
+                            {% if property.zipcode %}{% if property.address or property.neighborhood or property.city or property.state %} - {% endif %}{{ property.zipcode | e }}{% endif %}
                         </span>
                     </div>
                     
