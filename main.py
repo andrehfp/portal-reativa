@@ -1,7 +1,12 @@
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Query, HTTPException, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, validator, ValidationError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import sqlite3
 import re
 from typing import List, Optional, Dict, Any
@@ -9,59 +14,182 @@ from pathlib import Path
 import json
 from slugify import slugify
 import bleach
-from markupsafe import Markup
+from markupsafe import Markup, escape
+import logging
 
 app = FastAPI(title="Portal Reativa", description="Portal de propriedades imobiliárias")
+
+# Rate limiting setup
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Validation error handler
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Validation error",
+            "errors": [
+                {
+                    "type": error["type"],
+                    "message": "Invalid input parameter"
+                } for error in exc.errors()
+            ]
+        }
+    )
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Add security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'"
+    )
+    
+    return response
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 DB_PATH = "../reale-xml/conceito/data/properties.db"
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Define allowed sort values to prevent SQL injection
+ALLOWED_SORTS = {
+    'relevance': ('created_at DESC', 'smart'),
+    'price_asc': ('price ASC, created_at DESC', 'price_asc'), 
+    'price_desc': ('price DESC, created_at DESC', 'price_desc'),
+    'recent': ('created_at DESC', 'recent')
+}
+
+# Input validation models
+class SearchParams(BaseModel):
+    q: str = Field(default="", max_length=200, description="Search query")
+    page: int = Field(default=1, ge=1, le=1000, description="Page number")
+    sort: str = Field(default="relevance", description="Sort order")
+    
+    @validator('q')
+    def validate_query(cls, v):
+        if not v:
+            return ""
+        
+        v = v.strip()
+        if not v:
+            return ""
+        
+        # Remove potentially dangerous characters
+        dangerous_chars = ['<', '>', '"', "'", ';', '--', '/*', '*/', '\\']
+        for char in dangerous_chars:
+            if char in v:
+                logger.warning(f"Blocked search query with dangerous character '{char}': {v}")
+                raise ValueError(f"Invalid character '{char}' in search query")
+        
+        return v
+    
+    @validator('sort')
+    def validate_sort(cls, v):
+        if v not in ALLOWED_SORTS:
+            logger.warning(f"Invalid sort parameter: {v}")
+            return 'relevance'  # Default to safe value
+        return v
+
+def create_safe_template_context(template_vars: dict) -> dict:
+    """Ensure all user-controllable data is escaped"""
+    safe_vars = template_vars.copy()
+    
+    # Escape query parameter
+    if 'query' in safe_vars and safe_vars['query']:
+        safe_vars['query'] = escape(safe_vars['query'])
+    
+    # Escape property data
+    if 'properties' in safe_vars:
+        for prop in safe_vars['properties']:
+            if 'title' in prop and prop['title']:
+                prop['title'] = escape(prop['title'])
+            if 'address' in prop and prop['address']:
+                prop['address'] = escape(prop['address'])
+            if 'neighborhood' in prop and prop['neighborhood']:
+                prop['neighborhood'] = escape(prop['neighborhood'])
+            if 'city' in prop and prop['city']:
+                prop['city'] = escape(prop['city'])
+    
+    return safe_vars
+
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, q: Optional[str] = None, page: int = 1, sort: str = "relevance"):
-    properties = []
-    total = 0
-    per_page = 12
+async def home(request: Request, params: SearchParams = Depends()):
+    try:
+        properties = []
+        total = 0
+        per_page = 12
+        
+        if params.q:
+            properties, total = search_properties(params.q, params.page, per_page, params.sort)
+        else:
+            # Show recent properties when no search query (always use recency for home)
+            properties, total = get_recent_properties(params.page, per_page)
+        
+        total_pages = (total + per_page - 1) // per_page
+        
+        context = create_safe_template_context({
+            "request": request,
+            "properties": properties,
+            "query": params.q or "",
+            "current_page": params.page,
+            "total_pages": total_pages,
+            "total": total,
+            "current_sort": params.sort
+        })
+        
+        return templates.TemplateResponse("index.html", context)
     
-    if q:
-        properties, total = search_properties(q, page, per_page, sort)
-    else:
-        # Show recent properties when no search query (always use recency for home)
-        properties, total = get_recent_properties(page, per_page)
-    
-    total_pages = (total + per_page - 1) // per_page
-    
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "properties": properties,
-        "query": q or "",
-        "current_page": page,
-        "total_pages": total_pages,
-        "total": total,
-        "current_sort": sort
-    })
+    except ValueError as e:
+        logger.warning(f"Invalid input in home endpoint: {e}")
+        raise HTTPException(status_code=400, detail="Invalid search parameters")
 
 @app.get("/search")
-async def search_api(request: Request, q: str = Query(...), page: int = 1, sort: str = "relevance"):
-    properties, total = search_properties(q, page, 12, sort)
-    total_pages = (total + 12 - 1) // 12
+@limiter.limit("30/minute")
+async def search_api(request: Request, params: SearchParams = Depends()):
+    try:
+        properties, total = search_properties(params.q, params.page, 12, params.sort)
+        total_pages = (total + 12 - 1) // 12
+        
+        # Generate filter data for the UI
+        active_filters = extract_active_filters(params.q)
+        filter_suggestions = generate_filter_suggestions(params.q, properties, total)
+        
+        context = create_safe_template_context({
+            "request": request,
+            "properties": properties,
+            "query": params.q,
+            "current_page": params.page,
+            "total_pages": total_pages,
+            "total": total,
+            "current_sort": params.sort,
+            "active_filters": active_filters,
+            "filter_suggestions": filter_suggestions
+        })
+        
+        return templates.TemplateResponse("components/property_grid.html", context)
     
-    # Generate filter data for the UI
-    active_filters = extract_active_filters(q)
-    filter_suggestions = generate_filter_suggestions(q, properties, total)
-    
-    return templates.TemplateResponse("components/property_grid.html", {
-        "request": request,
-        "properties": properties,
-        "query": q,
-        "current_page": page,
-        "total_pages": total_pages,
-        "total": total,
-        "current_sort": sort,
-        "active_filters": active_filters,
-        "filter_suggestions": filter_suggestions
-    })
+    except ValueError as e:
+        logger.warning(f"Invalid input in search endpoint: {e}")
+        raise HTTPException(status_code=400, detail="Invalid search parameters")
 
 @app.get("/imovel/{slug}", response_class=HTMLResponse)
 async def property_detail_by_slug(request: Request, slug: str):
@@ -313,27 +441,20 @@ def search_properties(query: str, page: int = 1, per_page: int = 12, sort: str =
         cursor = conn.execute(count_query, params)
         total = cursor.fetchone()['total']
         
-        # Apply sorting based on user selection
-        if sort == "price_asc":
-            order_clause = " ORDER BY price ASC, created_at DESC"
-        elif sort == "price_desc":
-            order_clause = " ORDER BY price DESC, created_at DESC"
-        elif sort == "recent":
-            order_clause = " ORDER BY created_at DESC"
-        elif sort == "relevance":
-            # Smart ordering based on search context for relevance
-            if search_metadata['price_found']:
+        # Apply secure sorting based on validated user selection
+        if sort in ALLOWED_SORTS:
+            order_sql, sort_type = ALLOWED_SORTS[sort]
+            if sort_type == 'smart' and search_metadata['price_found']:
+                # Smart ordering for relevance based on search context
                 if search_metadata['price_direction'] == 'max':
-                    # For "até 500k", show expensive properties first (closer to limit)
                     order_clause = " ORDER BY price DESC, created_at DESC"
                 else:
-                    # For "acima de 200k", show cheaper properties first (closer to minimum)
                     order_clause = " ORDER BY price ASC, created_at DESC"
             else:
-                # Default relevance ordering by recency when no price context
-                order_clause = " ORDER BY created_at DESC"
+                order_clause = f" ORDER BY {order_sql}"
         else:
-            # Fallback to recency for unknown sort values
+            # This should not happen due to validation, but fallback for safety
+            logger.warning(f"Unexpected sort value after validation: {sort}")
             order_clause = " ORDER BY created_at DESC"
         
         # Get paginated results
@@ -374,14 +495,14 @@ def search_properties(query: str, page: int = 1, per_page: int = 12, sort: str =
         return properties, total
         
     except sqlite3.Error as e:
-        print(f"Database error in search_properties: {e}")
-        # Return empty results on database error
+        logger.error(f"Database error in search_properties: {e}")
+        # Return empty results on database error - don't expose details to user
         if 'conn' in locals():
             conn.close()
         return [], 0
     except Exception as e:
-        print(f"Unexpected error in search_properties: {e}")
-        # Return empty results on any other error
+        logger.error(f"Unexpected error in search_properties: {e}")
+        # Return empty results on any other error - don't expose details to user
         if 'conn' in locals():
             conn.close()
         return [], 0
@@ -653,12 +774,12 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
         return suggestions[:5]
         
     except sqlite3.Error as e:
-        print(f"Database error in generate_filter_suggestions: {e}")
+        logger.error(f"Database error in generate_filter_suggestions: {e}")
         if 'conn' in locals():
             conn.close()
         return []
     except Exception as e:
-        print(f"Error generating filter suggestions: {e}")
+        logger.error(f"Error generating filter suggestions: {e}")
         if 'conn' in locals():
             conn.close()
         return []
