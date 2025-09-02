@@ -55,6 +55,9 @@
 {% endif %}
 
 {% if total > 0 %}
+    <!-- Scroll Target Anchor -->
+    <div id="property-list-top"></div>
+    
     <!-- Results Count -->
     <div class="mb-8 flex items-center justify-between">
         <p class="text-sm text-gray-500">
@@ -180,6 +183,7 @@
         {% if current_page > 1 %}
             <button hx-get="/search?q={{ query }}&page={{ current_page - 1 }}&sort={{ current_sort }}" 
                     hx-target="#search-results"
+                    hx-swap="innerHTML show:#property-list-top:top"
                     class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
@@ -196,6 +200,7 @@
                 {% elif page_num <= 3 or page_num >= total_pages - 2 or (page_num >= current_page - 1 and page_num <= current_page + 1) %}
                     <button hx-get="/search?q={{ query }}&page={{ page_num }}&sort={{ current_sort }}" 
                             hx-target="#search-results"
+                            hx-swap="innerHTML show:#property-list-top:top"
                             class="w-8 h-8 flex items-center justify-center text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                         {{ page_num }}
                     </button>
@@ -208,6 +213,7 @@
         {% if current_page < total_pages %}
             <button hx-get="/search?q={{ query }}&page={{ current_page + 1 }}&sort={{ current_sort }}" 
                     hx-target="#search-results"
+                    hx-swap="innerHTML show:#property-list-top:top"
                     class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
