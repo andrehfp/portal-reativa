@@ -543,6 +543,25 @@
             }
         }
         
+        // Synchronize sort values between dropdown and hidden field
+        function syncSortValues(newSortValue) {
+            console.log('SortSync: Updating sort value to:', newSortValue);
+            
+            // Update hidden field in main search form
+            const hiddenSortField = document.getElementById('main-sort-field');
+            if (hiddenSortField) {
+                hiddenSortField.value = newSortValue;
+                console.log('SortSync: Updated hidden field to:', newSortValue);
+            }
+            
+            // Update any sort dropdown that exists
+            const sortDropdown = document.querySelector('select[name="sort"]');
+            if (sortDropdown) {
+                sortDropdown.value = newSortValue;
+                console.log('SortSync: Updated dropdown to:', newSortValue);
+            }
+        }
+        
         // New toggle function for static filter buttons
         function toggleFilter(category, value, label) {
             if (filterManager) {

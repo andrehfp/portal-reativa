@@ -18,7 +18,7 @@
               hx-trigger="submit, keyup changed delay:500ms from:input[name='q']"
               hx-indicator="#search-spinner">
             <!-- Hidden sort field to maintain current sort -->
-            <input type="hidden" name="sort" value="{{ current_sort | default('relevance') }}">
+            <input type="hidden" id="main-sort-field" name="sort" value="{{ current_sort | default('relevance') }}">
             <div class="relative group">
                 <input 
                     type="text" 

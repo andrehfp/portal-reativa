@@ -71,6 +71,7 @@
                     hx-vals="js:{'sort': event.target.value, 'q': '{{ query | e }}', 'page': 1}"
                     hx-trigger="change"
                     hx-swap="innerHTML show:#property-list-top:top"
+                    onchange="syncSortValues(this.value)"
                     name="sort">
                 <option value="relevance" {% if current_sort == 'relevance' %}selected{% endif %}>Relevância</option>
                 <option value="price_asc" {% if current_sort == 'price_asc' %}selected{% endif %}>Menor preço</option>
