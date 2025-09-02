@@ -45,28 +45,36 @@
         </form>
         
         <!-- Quick Filters -->
-        <div class="flex flex-wrap justify-center gap-3 mt-8">
-            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    onclick="addFilter('transaction_type', 'venda', 'Venda')">
+        <div class="flex flex-wrap justify-center gap-3 mt-8" id="quick-filters">
+            <button class="filter-quick-btn px-4 py-1.5 text-xs bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    data-filter-type="transaction_type" 
+                    data-filter-value="venda"
+                    onclick="toggleFilter('transaction_type', 'venda', 'Venda')">
                 Venda
             </button>
-            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    onclick="addFilter('transaction_type', 'aluguel', 'Aluguel')">
+            <button class="filter-quick-btn px-4 py-1.5 text-xs bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    data-filter-type="transaction_type" 
+                    data-filter-value="aluguel"
+                    onclick="toggleFilter('transaction_type', 'aluguel', 'Aluguel')">
                 Aluguel
             </button>
-            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    onclick="addFilter('property_type', 'casas', 'Casas')">
+            <button class="filter-quick-btn px-4 py-1.5 text-xs bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    data-filter-type="property_type" 
+                    data-filter-value="casas"
+                    onclick="toggleFilter('property_type', 'casas', 'Casas')">
                 Casas
             </button>
-            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    onclick="addFilter('property_type', 'apartamentos', 'Apartamentos')">
+            <button class="filter-quick-btn px-4 py-1.5 text-xs bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    data-filter-type="property_type" 
+                    data-filter-value="apartamentos"
+                    onclick="toggleFilter('property_type', 'apartamentos', 'Apartamentos')">
                 Apartamentos
             </button>
-            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+            <button class="filter-quick-btn px-4 py-1.5 text-xs bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
                     onclick="updateSearchAndSubmit('até 500k')">
                 Até R$ 500k
             </button>
-            <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
+            <button class="filter-quick-btn px-4 py-1.5 text-xs bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
                     onclick="updateSearchAndSubmit('2 quartos')">
                 2+ Quartos
             </button>
