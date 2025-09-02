@@ -1,0 +1,2 @@
+- [x] order is not working (relevância, maior preço etc)
+- [x] remover "lista" ou "grade" opções

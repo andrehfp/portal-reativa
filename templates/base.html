@@ -491,6 +491,8 @@
                 if (filterManager) {
                     updateQuickFilterStates();
                 }
+                updateSortControlsVisibility();
+                syncSortDropdownFromState();
             }, 100);
         });
         
@@ -540,6 +542,25 @@
         function removeFilter(category) {
             if (filterManager) {
                 filterManager.removeFilter(category);
+            }
+        }
+        
+        // Synchronize sort values between dropdown and hidden field
+        function syncSortValues(newSortValue) {
+            console.log('SortSync: Updating sort value to:', newSortValue);
+            
+            // Update hidden field in main search form
+            const hiddenSortField = document.getElementById('main-sort-field');
+            if (hiddenSortField) {
+                hiddenSortField.value = newSortValue;
+                console.log('SortSync: Updated hidden field to:', newSortValue);
+            }
+            
+            // Update any sort dropdown that exists
+            const sortDropdown = document.querySelector('select[name="sort"]');
+            if (sortDropdown) {
+                sortDropdown.value = newSortValue;
+                console.log('SortSync: Updated dropdown to:', newSortValue);
             }
         }
         
@@ -595,7 +616,44 @@
             });
         }
         
-        // Update filter states after HTMX updates
+        // Show/hide sort controls based on search results
+        function updateSortControlsVisibility() {
+            const sortControls = document.getElementById('sort-controls');
+            const searchResults = document.getElementById('search-results');
+            
+            if (sortControls && searchResults) {
+                // Check if there are properties displayed
+                const hasProperties = searchResults.querySelector('.grid') !== null;
+                sortControls.style.display = hasProperties ? 'block' : 'none';
+                console.log('SortControls: Visibility set to', hasProperties ? 'visible' : 'hidden');
+            }
+        }
+        
+        // Sync sort dropdown value from hidden field or URL parameter
+        function syncSortDropdownFromState() {
+            const sortDropdown = document.getElementById('sort-dropdown');
+            const hiddenSortField = document.getElementById('main-sort-field');
+            
+            // Try to get sort value from URL params first
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlSort = urlParams.get('sort');
+            
+            if (sortDropdown) {
+                if (urlSort) {
+                    sortDropdown.value = urlSort;
+                    console.log('SortSync: Synced dropdown to URL param:', urlSort);
+                    // Also update hidden field
+                    if (hiddenSortField) {
+                        hiddenSortField.value = urlSort;
+                    }
+                } else if (hiddenSortField) {
+                    sortDropdown.value = hiddenSortField.value;
+                    console.log('SortSync: Synced dropdown to hidden field value:', hiddenSortField.value);
+                }
+            }
+        }
+
+        // Update filter states and sort sync after HTMX updates
         document.addEventListener('htmx:afterSettle', function(event) {
             if (event.target.querySelector('input[name="q"]')) {
                 setTimeout(() => {
@@ -604,6 +662,26 @@
                         updateQuickFilterStates();
                     }
                 }, 100);
+            }
+            
+            // Handle search results updates
+            if (event.target.id === 'search-results') {
+                console.log('SortSync: HTMX updated search results');
+                updateSortControlsVisibility();
+                
+                // Extract sort value from pagination links in the response
+                const paginationLinks = event.target.querySelectorAll('[hx-get*="sort="]');
+                if (paginationLinks.length > 0) {
+                    const hxGetValue = paginationLinks[0].getAttribute('hx-get');
+                    const sortMatch = hxGetValue.match(/sort=([^&]*)/);
+                    if (sortMatch) {
+                        const sortValue = sortMatch[1];
+                        console.log('SortSync: Extracted sort value from pagination:', sortValue);
+                        syncSortValues(sortValue);
+                    }
+                } else {
+                    syncSortDropdownFromState();
+                }
             }
         });
     </script>
