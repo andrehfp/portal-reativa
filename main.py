@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field, validator, ValidationError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-import sqlite3
 import re
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import json
+from database import execute_query, execute_one, execute_count
 from slugify import slugify
 import bleach
 from markupsafe import Markup, escape
@@ -64,7 +64,7 @@ async def add_security_headers(request: Request, call_next):
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-DB_PATH = "../reale-xml/conceito/data/properties.db"
+# Database connection handled by database.py module
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -227,95 +227,82 @@ async def property_detail_redirect(request: Request, property_id: int):
     return RedirectResponse(url=f"/imovel/{property_data['slug']}", status_code=301)
 
 def get_recent_properties(page: int = 1, per_page: int = 12) -> tuple[List[Dict[str, Any]], int]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    
     # Count total active properties
     count_query = "SELECT COUNT(*) as total FROM properties WHERE status = 'active'"
-    cursor = conn.execute(count_query)
-    total = cursor.fetchone()['total']
+    total = execute_count(count_query)
     
     # Get recent properties ordered by created_at
     query = """
         SELECT * FROM properties 
         WHERE status = 'active' 
         ORDER BY created_at DESC 
-        LIMIT ? OFFSET ?
+        LIMIT %s OFFSET %s
     """
     offset = (page - 1) * per_page
-    cursor = conn.execute(query, [per_page, offset])
+    rows = execute_query(query, [per_page, offset])
     
     properties = []
-    for row in cursor.fetchall():
+    for row in rows:
         prop = dict(row)
-        # Parse JSON fields
-        if prop['images']:
-            try:
-                prop['images'] = json.loads(prop['images'])
-            except:
-                prop['images'] = []
-        if prop['features']:
-            try:
-                prop['features'] = json.loads(prop['features'])
-            except:
-                prop['features'] = []
+        # JSONB fields are already parsed - no need for json.loads
+        if not prop['images']:
+            prop['images'] = []
+        if not prop['features']:
+            prop['features'] = []
         
-        # Format price
+        # Convert numeric to float
         if prop['price']:
+            prop['price'] = float(prop['price'])
             prop['formatted_price'] = format_price(prop['price'])
+        
+        # Format datetime fields for templates
+        if prop.get('created_at'):
+            prop['created_at'] = prop['created_at'].strftime('%Y-%m-%d') if hasattr(prop['created_at'], 'strftime') else str(prop['created_at'])
         
         # Generate slug for SEO-friendly URLs
         prop['slug'] = generate_property_slug(prop)
         
         properties.append(prop)
     
-    conn.close()
     return properties, total
 
 def get_property_by_id(property_id: int) -> Dict[str, Any]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    query = "SELECT * FROM properties WHERE id = %s AND status = 'active'"
+    row = execute_one(query, [property_id])
     
-    cursor = conn.execute(
-        "SELECT * FROM properties WHERE id = ? AND status = 'active'",
-        [property_id]
-    )
-    
-    row = cursor.fetchone()
     if not row:
-        conn.close()
         return None
     
     property_data = dict(row)
     
-    # Parse JSON fields
-    if property_data['images']:
-        try:
-            property_data['images'] = json.loads(property_data['images'])
-        except:
-            property_data['images'] = []
-    if property_data['features']:
-        try:
-            property_data['features'] = json.loads(property_data['features'])
-        except:
-            property_data['features'] = []
+    # JSONB fields are already parsed - no need for json.loads
+    if not property_data['images']:
+        property_data['images'] = []
+    if not property_data['features']:
+        property_data['features'] = []
     
-    # Format price
+    # Convert numeric to float
     if property_data['price']:
+        property_data['price'] = float(property_data['price'])
         property_data['formatted_price'] = format_price(property_data['price'])
     
     # Calculate price per square meter
     if property_data['price'] and property_data.get('area'):
-        property_data['price_per_sqm'] = calculate_price_per_sqm(property_data['price'], property_data['area'])
+        area = float(property_data['area']) if property_data['area'] else 0
+        if area > 0:
+            property_data['price_per_sqm'] = calculate_price_per_sqm(property_data['price'], area)
     
     # Generate SEO-friendly slug
     property_data['slug'] = generate_property_slug(property_data)
+    
+    # Format datetime fields for templates
+    if property_data.get('created_at'):
+        property_data['created_at'] = property_data['created_at'].strftime('%Y-%m-%d') if hasattr(property_data['created_at'], 'strftime') else str(property_data['created_at'])
     
     # Sanitize HTML description
     if property_data.get('description'):
         property_data['description_html'] = sanitize_html_description(property_data['description'])
     
-    conn.close()
     return property_data
 
 # Property abbreviation dictionary for common Brazilian real estate terms
@@ -411,9 +398,6 @@ def expand_abbreviations(text: str) -> str:
 
 def search_properties(query: str, page: int = 1, per_page: int = 12, sort: str = "relevance") -> tuple[List[Dict[str, Any]], int]:
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        
         # Expand abbreviations before parsing
         expanded_query = expand_abbreviations(query)
         
@@ -438,8 +422,7 @@ def search_properties(query: str, page: int = 1, per_page: int = 12, sort: str =
         if conditions:
             count_query += " AND " + " AND ".join(conditions)
         
-        cursor = conn.execute(count_query, params)
-        total = cursor.fetchone()['total']
+        total = execute_count(count_query, params)
         
         # Apply secure sorting based on validated user selection
         if sort in ALLOWED_SORTS:
@@ -458,53 +441,37 @@ def search_properties(query: str, page: int = 1, per_page: int = 12, sort: str =
             order_clause = " ORDER BY created_at DESC"
         
         # Get paginated results
-        base_query += order_clause + " LIMIT ? OFFSET ?"
+        base_query += order_clause + " LIMIT %s OFFSET %s"
         offset = (page - 1) * per_page
-        cursor = conn.execute(base_query, params + [per_page, offset])
+        rows = execute_query(base_query, params + [per_page, offset])
         
         properties = []
-        for row in cursor.fetchall():
+        for row in rows:
             prop = dict(row)
-            # Parse JSON fields
-            if prop['images']:
-                try:
-                    prop['images'] = json.loads(prop['images'])
-                except json.JSONDecodeError:
-                    prop['images'] = []
-            else:
+            # JSONB fields are already parsed - no need for json.loads
+            if not prop['images']:
                 prop['images'] = []
-                
-            if prop['features']:
-                try:
-                    prop['features'] = json.loads(prop['features'])
-                except json.JSONDecodeError:
-                    prop['features'] = []
-            else:
+            if not prop['features']:
                 prop['features'] = []
             
-            # Format price
+            # Convert numeric to float and format price
             if prop['price']:
+                prop['price'] = float(prop['price'])
                 prop['formatted_price'] = format_price(prop['price'])
+            
+            # Format datetime fields for templates
+            if prop.get('created_at'):
+                prop['created_at'] = prop['created_at'].strftime('%Y-%m-%d') if hasattr(prop['created_at'], 'strftime') else str(prop['created_at'])
             
             # Generate slug for SEO-friendly URLs
             prop['slug'] = generate_property_slug(prop)
             
             properties.append(prop)
         
-        conn.close()
         return properties, total
         
-    except sqlite3.Error as e:
-        logger.error(f"Database error in search_properties: {e}")
-        # Return empty results on database error - don't expose details to user
-        if 'conn' in locals():
-            conn.close()
-        return [], 0
     except Exception as e:
-        logger.error(f"Unexpected error in search_properties: {e}")
-        # Return empty results on any other error - don't expose details to user
-        if 'conn' in locals():
-            conn.close()
+        logger.error(f"Database error in search_properties: {e}")
         return [], 0
 
 def extract_active_filters(query: str) -> List[Dict[str, str]]:
@@ -652,11 +619,8 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
     query_lower = query.lower()
     expanded_query = expand_abbreviations(query_lower)
     
-    # Get database connection to run suggestion queries
+    # Generate contextual suggestions based on current search
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        
         # Parse current query to understand what's already filtered
         current_conditions, current_params, search_metadata = parse_search_query(expanded_query)
         
@@ -679,9 +643,8 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
             ]
             
             for value, label, price_num, operator in price_suggestions:
-                price_query = base_query + f" AND price {operator} ? AND price > 0"
-                cursor = conn.execute(price_query, current_params + [price_num])
-                count = cursor.fetchone()['count']
+                price_query = base_query + f" AND price {operator} %s AND price > 0"
+                count = execute_count(price_query, current_params + [price_num])
                 
                 if count > 0:
                     add_query = f"{query} {value}".strip()
@@ -703,9 +666,8 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
             ]
             
             for value, label, db_type in type_suggestions:
-                type_query = base_query + " AND type = ?"
-                cursor = conn.execute(type_query, current_params + [db_type])
-                count = cursor.fetchone()['count']
+                type_query = base_query + " AND type = %s"
+                count = execute_count(type_query, current_params + [db_type])
                 
                 if count > 0:
                     add_query = f"{query} {value}".strip()
@@ -727,9 +689,8 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
             ]
             
             for value, label, bedroom_count in bedroom_suggestions:
-                bedroom_query = base_query + " AND bedrooms >= ?"
-                cursor = conn.execute(bedroom_query, current_params + [bedroom_count])
-                count = cursor.fetchone()['count']
+                bedroom_query = base_query + " AND bedrooms >= %s"
+                count = execute_count(bedroom_query, current_params + [bedroom_count])
                 
                 if count > 0:
                     add_query = f"{query} {value}".strip()
@@ -753,9 +714,8 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
             
             # Suggest top neighborhoods
             for neighborhood, _ in sorted(neighborhoods.items(), key=lambda x: x[1], reverse=True)[:3]:
-                neighborhood_query = base_query + " AND LOWER(neighborhood) LIKE ?"
-                cursor = conn.execute(neighborhood_query, current_params + [f"%{neighborhood}%"])
-                count = cursor.fetchone()['count']
+                neighborhood_query = base_query + " AND LOWER(neighborhood) ILIKE %s"
+                count = execute_count(neighborhood_query, current_params + [f"%{neighborhood}%"])
                 
                 if count > 0:
                     add_query = f"{query} no {neighborhood}".strip()
@@ -767,21 +727,12 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
                         'add_query': add_query
                     })
         
-        conn.close()
-        
         # Sort suggestions by count (most results first) and limit to 5
         suggestions.sort(key=lambda x: x['count'], reverse=True)
         return suggestions[:5]
         
-    except sqlite3.Error as e:
-        logger.error(f"Database error in generate_filter_suggestions: {e}")
-        if 'conn' in locals():
-            conn.close()
-        return []
     except Exception as e:
         logger.error(f"Error generating filter suggestions: {e}")
-        if 'conn' in locals():
-            conn.close()
         return []
 
 
@@ -824,10 +775,10 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
             price_value = price_converter(match.group(1))
             
             if 'até' in pattern or 'máximo' in pattern or 'max' in pattern:
-                conditions.append("price <= ?")
+                conditions.append("price <= %s")
                 price_direction = 'max'
             else:
-                conditions.append("price >= ?")
+                conditions.append("price >= %s")
                 price_direction = 'min'
             params.append(price_value)
             price_found = True
@@ -846,7 +797,7 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
     
     for key, value in type_mapping.items():
         if key in expanded_query:
-            conditions.append("type = ?")
+            conditions.append("type = %s")
             params.append(value)
             break
     
@@ -895,22 +846,22 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
                 city = parts[1].strip()
                 
                 # Add specific neighborhood + city condition
-                location_conditions.append("(LOWER(neighborhood) LIKE ? AND LOWER(city) LIKE ?)")
+                location_conditions.append("(LOWER(neighborhood) ILIKE %s AND LOWER(city) ILIKE %s)")
                 location_params.extend([f"%{neighborhood}%", f"%{city}%"])
                 
                 # Also add individual neighborhood and city conditions as fallback
                 location_conditions.extend([
-                    "LOWER(neighborhood) LIKE ?",
-                    "LOWER(city) LIKE ?"
+                    "LOWER(neighborhood) ILIKE %s",
+                    "LOWER(city) ILIKE %s"
                 ])
                 location_params.extend([f"%{neighborhood}%", f"%{city}%"])
             else:
                 # Single location term - search in all location fields
                 location_conditions.extend([
-                    "LOWER(neighborhood) = ?",
-                    "LOWER(neighborhood) LIKE ?", 
-                    "LOWER(city) = ?",
-                    "LOWER(address) LIKE ?"
+                    "LOWER(neighborhood) = %s",
+                    "LOWER(neighborhood) ILIKE %s", 
+                    "LOWER(city) = %s",
+                    "LOWER(address) ILIKE %s"
                 ])
                 exact_term = location.lower()
                 starts_with_term = f"{location.lower()}%"
@@ -927,7 +878,7 @@ def parse_search_query(query: str) -> tuple[List[str], List[Any], dict]:
     bedroom_match = re.search(r'(\d+)\s*(?:quartos?|dormitórios?)', expanded_query)
     if bedroom_match:
         bedrooms = int(bedroom_match.group(1))
-        conditions.append("bedrooms >= ?")
+        conditions.append("bedrooms >= %s")
         params.append(bedrooms)
     
     # Return metadata about the search
