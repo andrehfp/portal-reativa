@@ -614,7 +614,7 @@
             });
         }
         
-        // Update filter states after HTMX updates
+        // Update filter states and sort sync after HTMX updates
         document.addEventListener('htmx:afterSettle', function(event) {
             if (event.target.querySelector('input[name="q"]')) {
                 setTimeout(() => {
@@ -623,6 +623,16 @@
                         updateQuickFilterStates();
                     }
                 }, 100);
+            }
+            
+            // Sync sort values after HTMX content replacement
+            if (event.target.id === 'search-results') {
+                console.log('SortSync: HTMX updated search results, syncing sort values');
+                const sortDropdown = event.target.querySelector('select[name="sort"]');
+                if (sortDropdown && sortDropdown.value) {
+                    console.log('SortSync: Found dropdown with value:', sortDropdown.value);
+                    syncSortValues(sortDropdown.value);
+                }
             }
         });
     </script>

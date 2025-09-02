@@ -68,7 +68,7 @@
             <select class="text-sm border-0 bg-gray-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
                     hx-get="/search"
                     hx-target="#search-results" 
-                    hx-vals="js:{'sort': event.target.value, 'q': '{{ query | e }}', 'page': 1}"
+                    hx-vals="js:{'sort': this.value, 'q': '{{ query | e }}', 'page': 1}"
                     hx-trigger="change"
                     hx-swap="innerHTML show:#property-list-top:top"
                     onchange="syncSortValues(this.value)"
