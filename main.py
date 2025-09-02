@@ -624,6 +624,10 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
         # Parse current query to understand what's already filtered
         current_conditions, current_params, search_metadata = parse_search_query(expanded_query)
         
+        # Check for active filters to determine if we should show "+" prefix
+        active_filters = extract_active_filters(query)
+        has_active_filters = len(active_filters) > 0
+        
         base_query = """
             SELECT COUNT(*) as count FROM properties 
             WHERE status = 'active'
@@ -632,37 +636,54 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
         if current_conditions:
             base_query += " AND " + " AND ".join(current_conditions)
         
-        # Suggest price ranges if no price filter exists
-        if not search_metadata.get('price_found'):
-            price_suggestions = [
-                ('até 300k', 'Até R$ 300k', 300000, '<='),
-                ('até 500k', 'Até R$ 500k', 500000, '<='),
-                ('até 1 milhão', 'Até R$ 1M', 1000000, '<='),
-                ('acima de 200k', 'Acima de R$ 200k', 200000, '>='),
-                ('acima de 500k', 'Acima de R$ 500k', 500000, '>='),
+        # Determine what types of filters are already active
+        active_filter_types = {f['type'] for f in active_filters}
+        
+        # Check for transaction type in query (separate from property type)
+        has_transaction_type = any(phrase in expanded_query for phrase in [
+            'para venda', 'para vender', 'a venda', 'venda', 'comprar', 'compra',
+            'para alugar', 'para aluguel', 'aluguel', 'alugar', 'locação'
+        ])
+        
+        # Check for property type in query (more specific check)
+        has_property_type = any(ptype in expanded_query for ptype in ['casa', 'apartamento', 'terreno', 'sala', 'loja', 'kitnet'])
+        
+        # Hierarchical filter suggestions based on UX principles
+        suggestion_priority = []
+        
+        # LEVEL 1: Transaction Type (highest priority if missing)
+        if not has_transaction_type and 'transaction_type' not in active_filter_types:
+            transaction_suggestions = [
+                ('venda', 'Venda', 'sale'),
+                ('aluguel', 'Aluguel', 'rent')
             ]
             
-            for value, label, price_num, operator in price_suggestions:
-                price_query = base_query + f" AND price {operator} %s AND price > 0"
-                count = execute_count(price_query, current_params + [price_num])
+            for value, label, db_type in transaction_suggestions:
+                transaction_query = base_query + " AND transaction_type = %s"
+                count = execute_count(transaction_query, current_params + [db_type])
                 
                 if count > 0:
                     add_query = f"{query} {value}".strip()
-                    suggestions.append({
-                        'type': 'price',
+                    display_label = label  # No plus for first level
+                    suggestion_priority.append(('transaction_type', 1, {
+                        'type': 'transaction_type',
                         'value': value,
-                        'label': label,
+                        'label': display_label,
                         'count': count,
                         'add_query': add_query
-                    })
+                    }))
+            
+        # If we have suggestions from Level 1, return them (don't overwhelm user)
+        if len(suggestion_priority) > 0:
+            suggestion_priority.sort(key=lambda x: (x[1], -x[2]['count']))
+            return [item[2] for item in suggestion_priority][:2]  # Max 2 transaction types
         
-        # Suggest property types if no type filter exists
-        has_property_type = any(ptype in expanded_query for ptype in ['casa', 'apartamento', 'terreno', 'sala', 'loja', 'kitnet'])
-        if not has_property_type:
+        # LEVEL 2: Property Types (after transaction type is set)
+        if has_transaction_type and not has_property_type and 'property_type' not in active_filter_types:
             type_suggestions = [
-                ('apartamento', 'Apartamento', 'Apartamento'),
-                ('casa', 'Casa', 'Casa'),
-                ('terreno', 'Terreno', 'Terreno'),
+                ('apartamentos', 'Apartamentos', 'Apartamento'),
+                ('casas', 'Casas', 'Casa'),
+                ('terrenos', 'Terrenos', 'Terreno'),
             ]
             
             for value, label, db_type in type_suggestions:
@@ -671,21 +692,24 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
                 
                 if count > 0:
                     add_query = f"{query} {value}".strip()
-                    suggestions.append({
+                    display_label = f"+ {label}"  # Plus for level 2+
+                    suggestion_priority.append(('property_type', 2, {
                         'type': 'property_type',
                         'value': value,
-                        'label': label,
+                        'label': display_label,
                         'count': count,
                         'add_query': add_query
-                    })
+                    }))
         
-        # Suggest bedrooms if no bedroom filter exists
+        # LEVEL 3: Specifications (bedrooms, price) - after property type
+        
+        # Suggest bedrooms first if we have property type (contextual to property)
         has_bedrooms = re.search(r'\d+\s*(?:quartos?|dormitórios?)', expanded_query)
-        if not has_bedrooms:
+        if has_property_type and not has_bedrooms and 'bedrooms' not in active_filter_types:
             bedroom_suggestions = [
-                ('2 quartos', '2 quartos', 2),
-                ('3 quartos', '3 quartos', 3),
-                ('4 quartos', '4+ quartos', 4),
+                ('2 quartos', '+ 2 Quartos', 2),
+                ('3 quartos', '+ 3 Quartos', 3),
+                ('4 quartos', '+ 4+ Quartos', 4),
             ]
             
             for value, label, bedroom_count in bedroom_suggestions:
@@ -694,42 +718,83 @@ def generate_filter_suggestions(query: str, properties: List[Dict], total_result
                 
                 if count > 0:
                     add_query = f"{query} {value}".strip()
-                    suggestions.append({
+                    suggestion_priority.append(('bedrooms', 3, {
                         'type': 'bedrooms',
                         'value': value,
                         'label': label,
                         'count': count,
                         'add_query': add_query
-                    })
+                    }))
         
-        # Suggest popular neighborhoods based on current results
+        # Suggest prices after transaction type is set
+        elif has_transaction_type and not search_metadata.get('price_found') and 'price' not in active_filter_types:
+            # Context-aware price ranges based on transaction type
+            if 'venda' in expanded_query or 'comprar' in expanded_query:
+                price_suggestions = [
+                    ('até 300k', '+ Até R$ 300k', 300000, '<='),
+                    ('até 500k', '+ Até R$ 500k', 500000, '<='),
+                    ('acima de 300k', '+ Acima de R$ 300k', 300000, '>='),
+                    ('acima de 500k', '+ Acima de R$ 500k', 500000, '>='),
+                ]
+            else:  # Rent prices
+                price_suggestions = [
+                    ('até 2000', '+ Até R$ 2k', 2000, '<='),
+                    ('até 3000', '+ Até R$ 3k', 3000, '<='), 
+                    ('acima de 2000', '+ Acima de R$ 2k', 2000, '>='),
+                    ('acima de 3000', '+ Acima de R$ 3k', 3000, '>='),
+                ]
+            
+            for value, label, price_num, operator in price_suggestions:
+                price_query = base_query + f" AND price {operator} %s AND price > 0"
+                count = execute_count(price_query, current_params + [price_num])
+                
+                if count > 0:
+                    add_query = f"{query} {value}".strip()
+                    suggestion_priority.append(('price', 3, {
+                        'type': 'price',
+                        'value': value,
+                        'label': label,
+                        'count': count,
+                        'add_query': add_query
+                    }))
+        
+        # LEVEL 4: Location (last priority, when other filters are set)
         has_location = re.search(r'(?:no|na|em)\s+([a-záêâôõç\s]+)', expanded_query)
-        if not has_location and properties:
+        if has_transaction_type and not has_location and properties and 'location' not in active_filter_types:
             # Get top neighborhoods from current results
             neighborhoods = {}
-            for prop in properties[:10]:  # Check first 10 properties
+            for prop in properties[:6]:  # Check first 6 properties for neighborhoods
                 if prop.get('neighborhood'):
                     neighborhood = prop['neighborhood'].lower()
                     neighborhoods[neighborhood] = neighborhoods.get(neighborhood, 0) + 1
             
-            # Suggest top neighborhoods
-            for neighborhood, _ in sorted(neighborhoods.items(), key=lambda x: x[1], reverse=True)[:3]:
+            # Suggest top neighborhoods (max 2 to avoid overwhelm)
+            for neighborhood, _ in sorted(neighborhoods.items(), key=lambda x: x[1], reverse=True)[:2]:
                 neighborhood_query = base_query + " AND LOWER(neighborhood) ILIKE %s"
                 count = execute_count(neighborhood_query, current_params + [f"%{neighborhood}%"])
                 
                 if count > 0:
                     add_query = f"{query} no {neighborhood}".strip()
-                    suggestions.append({
+                    display_label = f"+ {neighborhood.title()}"
+                    suggestion_priority.append(('location', 4, {
                         'type': 'location',
                         'value': f"no {neighborhood}",
-                        'label': neighborhood.title(),
+                        'label': display_label,
                         'count': count,
                         'add_query': add_query
-                    })
+                    }))
         
-        # Sort suggestions by count (most results first) and limit to 5
-        suggestions.sort(key=lambda x: x['count'], reverse=True)
-        return suggestions[:5]
+        # Sort by priority first, then by count within each priority group
+        suggestion_priority.sort(key=lambda x: (x[1], -x[2]['count']))
+        
+        # Extract suggestions with smart limiting based on hierarchy
+        suggestions = [item[2] for item in suggestion_priority]
+        
+        # Limit suggestions to avoid cognitive overload:
+        # - Level 2 (property types): max 3
+        # - Level 3 (specs): max 4  
+        # - Level 4 (location): max 2
+        return suggestions[:4]
         
     except Exception as e:
         logger.error(f"Error generating filter suggestions: {e}")
