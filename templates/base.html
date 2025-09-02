@@ -629,14 +629,27 @@
             }
         }
         
-        // Sync sort dropdown value from hidden field or current_sort
+        // Sync sort dropdown value from hidden field or URL parameter
         function syncSortDropdownFromState() {
             const sortDropdown = document.getElementById('sort-dropdown');
             const hiddenSortField = document.getElementById('main-sort-field');
             
-            if (sortDropdown && hiddenSortField) {
-                sortDropdown.value = hiddenSortField.value;
-                console.log('SortSync: Synced dropdown to hidden field value:', hiddenSortField.value);
+            // Try to get sort value from URL params first
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlSort = urlParams.get('sort');
+            
+            if (sortDropdown) {
+                if (urlSort) {
+                    sortDropdown.value = urlSort;
+                    console.log('SortSync: Synced dropdown to URL param:', urlSort);
+                    // Also update hidden field
+                    if (hiddenSortField) {
+                        hiddenSortField.value = urlSort;
+                    }
+                } else if (hiddenSortField) {
+                    sortDropdown.value = hiddenSortField.value;
+                    console.log('SortSync: Synced dropdown to hidden field value:', hiddenSortField.value);
+                }
             }
         }
 
@@ -655,7 +668,20 @@
             if (event.target.id === 'search-results') {
                 console.log('SortSync: HTMX updated search results');
                 updateSortControlsVisibility();
-                syncSortDropdownFromState();
+                
+                // Extract sort value from pagination links in the response
+                const paginationLinks = event.target.querySelectorAll('[hx-get*="sort="]');
+                if (paginationLinks.length > 0) {
+                    const hxGetValue = paginationLinks[0].getAttribute('hx-get');
+                    const sortMatch = hxGetValue.match(/sort=([^&]*)/);
+                    if (sortMatch) {
+                        const sortValue = sortMatch[1];
+                        console.log('SortSync: Extracted sort value from pagination:', sortValue);
+                        syncSortValues(sortValue);
+                    }
+                } else {
+                    syncSortDropdownFromState();
+                }
             }
         });
     </script>

@@ -87,7 +87,7 @@
             <select class="text-sm border-0 bg-gray-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
                     hx-get="/search"
                     hx-target="#search-results" 
-                    hx-vals="js:{'sort': this.value, 'q': document.querySelector('input[name=q]').value, 'page': 1}"
+                    hx-include="[name='q']"
                     hx-trigger="change"
                     hx-swap="innerHTML show:#property-list-top:top"
                     hx-indicator="#sort-spinner"
