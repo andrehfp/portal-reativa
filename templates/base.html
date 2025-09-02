@@ -253,20 +253,239 @@
     </style>
     
     <script>
-        // Function to update search input and trigger search
-        function updateSearchAndSubmit(query) {
-            // Find the search input field (it has name="q")
-            const searchInput = document.querySelector('input[name="q"]');
-            if (searchInput) {
-                // Update the input value
-                searchInput.value = query;
+        // FilterManager class for proper filter state management
+        class FilterManager {
+            constructor() {
+                this.filters = new Map();
+                this.searchInput = document.querySelector('input[name="q"]');
+                this.init();
+            }
+            
+            init() {
+                // Parse existing query on page load
+                if (this.searchInput && this.searchInput.value) {
+                    this.parseSearchQuery(this.searchInput.value);
+                }
                 
-                // Trigger the form submission to update the search results
-                const form = searchInput.closest('form');
+                // Note: We don't need to listen for search input changes anymore
+                // since we're managing filters through the FilterManager directly
+                // The old input listener was causing filters to be cleared
+            }
+            
+            parseSearchQuery(query, forceReparse = false) {
+                // Only parse if we don't already have filters (initialization only) or forced
+                if (this.filters.size > 0 && !forceReparse) {
+                    console.log('FilterManager: Skipping parseSearchQuery - filters already exist');
+                    return;
+                }
+                
+                if (!query) {
+                    if (forceReparse) {
+                        console.log('FilterManager: Clearing filters due to empty query');
+                        this.filters.clear();
+                    }
+                    return;
+                }
+                
+                console.log('FilterManager: Parsing query:', query, forceReparse ? '(forced)' : '(initial)');
+                
+                // Clear filters if force parsing
+                if (forceReparse) {
+                    this.filters.clear();
+                }
+                
+                const queryLower = query.toLowerCase();
+                
+                // Parse transaction type
+                if (queryLower.includes('venda') || queryLower.includes('comprar')) {
+                    this.filters.set('transaction_type', {value: 'venda', label: 'Venda'});
+                } else if (queryLower.includes('aluguel') || queryLower.includes('alugar')) {
+                    this.filters.set('transaction_type', {value: 'aluguel', label: 'Aluguel'});
+                }
+                
+                // Parse property type
+                if (queryLower.includes('apartamento') || queryLower.includes('apto')) {
+                    this.filters.set('property_type', {value: 'apartamentos', label: 'Apartamentos'});
+                } else if (queryLower.includes('casa')) {
+                    this.filters.set('property_type', {value: 'casas', label: 'Casas'});
+                } else if (queryLower.includes('terreno')) {
+                    this.filters.set('property_type', {value: 'terrenos', label: 'Terrenos'});
+                }
+                
+                // Parse bedrooms
+                const bedroomMatch = queryLower.match(/(\d+)\s*(?:quartos?|dormitórios?)/);
+                if (bedroomMatch) {
+                    const num = bedroomMatch[1];
+                    this.filters.set('bedrooms', {value: `${num} quartos`, label: `${num} Quartos`});
+                }
+                
+                // Parse price ranges
+                if (queryLower.includes('até') && queryLower.includes('k')) {
+                    const priceMatch = queryLower.match(/até (\d+)k/);
+                    if (priceMatch) {
+                        this.filters.set('price', {value: `até ${priceMatch[1]}k`, label: `Até R$ ${priceMatch[1]}k`});
+                    }
+                } else if (queryLower.includes('acima de') && queryLower.includes('k')) {
+                    const priceMatch = queryLower.match(/acima de (\d+)k/);
+                    if (priceMatch) {
+                        this.filters.set('price', {value: `acima de ${priceMatch[1]}k`, label: `Acima de R$ ${priceMatch[1]}k`});
+                    }
+                }
+                
+                // Parse location
+                const locationMatch = queryLower.match(/(?:no|na|em)\s+([a-záêâôõç\s]+?)(?:\s+(?:até|acima|para|com|de\s+[a-z]+|\d)|$)/);
+                if (locationMatch) {
+                    const location = locationMatch[1].trim();
+                    this.filters.set('location', {value: `no ${location}`, label: location.charAt(0).toUpperCase() + location.slice(1)});
+                }
+            }
+            
+            addFilter(category, value, label) {
+                console.log('FilterManager: Adding filter', category, value, label);
+                console.log('FilterManager: Current filters before add:', Array.from(this.filters.entries()));
+                
+                // Handle mutual exclusivity for transaction types
+                if (category === 'transaction_type' && this.filters.has('transaction_type')) {
+                    console.log('FilterManager: Replacing existing transaction type');
+                    this.filters.delete('transaction_type');
+                }
+                
+                // Add the new filter
+                this.filters.set(category, {value, label});
+                console.log('FilterManager: Current filters after add:', Array.from(this.filters.entries()));
+                
+                // Update UI and trigger search
+                this.syncSearchBar();
+                this.executeSearch();
+            }
+            
+            removeFilter(category) {
+                console.log('FilterManager: Removing filter', category);
+                console.log('FilterManager: Current filters before removal:', Array.from(this.filters.entries()));
+                this.filters.delete(category);
+                console.log('FilterManager: Current filters after removal:', Array.from(this.filters.entries()));
+                this.syncSearchBar();
+                this.executeSearch();
+            }
+            
+            // Force re-sync FilterManager state from search bar (after HTMX updates)
+            forceSyncFromSearchBar() {
+                if (!this.searchInput) return;
+                
+                console.log('FilterManager: Force syncing from search bar:', this.searchInput.value);
+                this.parseSearchQuery(this.searchInput.value, true);
+                console.log('FilterManager: Filters after force sync:', Array.from(this.filters.entries()));
+            }
+            
+            syncSearchBar() {
+                if (!this.searchInput) return;
+                
+                const queryParts = [];
+                
+                // Add filters in logical order
+                if (this.filters.has('transaction_type')) {
+                    queryParts.push(this.filters.get('transaction_type').value);
+                }
+                if (this.filters.has('property_type')) {
+                    queryParts.push(this.filters.get('property_type').value);
+                }
+                if (this.filters.has('bedrooms')) {
+                    queryParts.push(this.filters.get('bedrooms').value);
+                }
+                if (this.filters.has('price')) {
+                    queryParts.push(this.filters.get('price').value);
+                }
+                if (this.filters.has('location')) {
+                    queryParts.push(this.filters.get('location').value);
+                }
+                
+                this.searchInput.value = queryParts.join(' ');
+            }
+            
+            executeSearch() {
+                if (!this.searchInput) return;
+                
+                const form = this.searchInput.closest('form');
                 if (form) {
-                    // Use HTMX to submit the form
                     htmx.trigger(form, 'submit');
                 }
+            }
+            
+            getFilterQuery(excludeCategory = null) {
+                const queryParts = [];
+                
+                for (const [category, filter] of this.filters) {
+                    if (category !== excludeCategory) {
+                        queryParts.push(filter.value);
+                    }
+                }
+                
+                return queryParts.join(' ');
+            }
+        }
+        
+        // Initialize FilterManager with singleton pattern
+        let filterManager;
+        
+        function initializeFilterManager() {
+            if (!filterManager) {
+                console.log('FilterManager: Creating new instance');
+                filterManager = new FilterManager();
+            } else {
+                console.log('FilterManager: Using existing instance');
+            }
+            return filterManager;
+        }
+        
+        // Initialize on DOM ready and HTMX events
+        document.addEventListener('DOMContentLoaded', initializeFilterManager);
+        
+        // Re-initialize on HTMX content updates (but preserve existing instance)
+        document.addEventListener('htmx:afterSettle', function(event) {
+            // Only reinitialize if the search input changed (new search results)
+            if (event.target.querySelector('input[name="q"]')) {
+                console.log('FilterManager: HTMX update detected');
+                initializeFilterManager();
+                
+                // Force sync FilterManager state with search bar after HTMX update
+                // This ensures the state is correct after filter removal/addition
+                if (filterManager) {
+                    filterManager.forceSyncFromSearchBar();
+                }
+            }
+        });
+        
+        // Legacy function for backward compatibility (will be updated)
+        function updateSearchAndSubmit(query) {
+            if (filterManager) {
+                // For now, just update the search input directly
+                // This will be replaced by proper filter management
+                filterManager.searchInput.value = query;
+                filterManager.executeSearch();
+            } else {
+                // Fallback for old behavior
+                const searchInput = document.querySelector('input[name="q"]');
+                if (searchInput) {
+                    searchInput.value = query;
+                    const form = searchInput.closest('form');
+                    if (form) {
+                        htmx.trigger(form, 'submit');
+                    }
+                }
+            }
+        }
+        
+        // Helper function to add a filter through the manager
+        function addFilter(category, value, label) {
+            if (filterManager) {
+                filterManager.addFilter(category, value, label);
+            }
+        }
+        
+        // Helper function to remove a filter through the manager  
+        function removeFilter(category) {
+            if (filterManager) {
+                filterManager.removeFilter(category);
             }
         }
     </script>
