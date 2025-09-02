@@ -251,6 +251,25 @@
             }
         }
     </style>
+    
+    <script>
+        // Function to update search input and trigger search
+        function updateSearchAndSubmit(query) {
+            // Find the search input field (it has name="q")
+            const searchInput = document.querySelector('input[name="q"]');
+            if (searchInput) {
+                // Update the input value
+                searchInput.value = query;
+                
+                // Trigger the form submission to update the search results
+                const form = searchInput.closest('form');
+                if (form) {
+                    // Use HTMX to submit the form
+                    htmx.trigger(form, 'submit');
+                }
+            }
+        }
+    </script>
 </head>
 <body class="h-full bg-gray-50 font-sans text-gray-900 antialiased">
     <div class="min-h-full">

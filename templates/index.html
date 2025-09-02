@@ -47,19 +47,19 @@
         <!-- Quick Filters -->
         <div class="flex flex-wrap justify-center gap-3 mt-8">
             <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    hx-get="/search?q=casas&sort={{ current_sort | default('relevance') }}" hx-target="#search-results">
+                    onclick="updateSearchAndSubmit('casas')">
                 Casas
             </button>
             <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    hx-get="/search?q=apartamentos&sort={{ current_sort | default('relevance') }}" hx-target="#search-results">
+                    onclick="updateSearchAndSubmit('apartamentos')">
                 Apartamentos
             </button>
             <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    hx-get="/search?q=até 500k&sort={{ current_sort | default('relevance') }}" hx-target="#search-results">
+                    onclick="updateSearchAndSubmit('até 500k')">
                 Até R$ 500k
             </button>
             <button class="px-5 py-2 text-sm bg-white border border-gray-200 rounded-full hover:border-gray-300 hover:bg-gray-50 transition-all"
-                    hx-get="/search?q=2 quartos&sort={{ current_sort | default('relevance') }}" hx-target="#search-results">
+                    onclick="updateSearchAndSubmit('2 quartos')">
                 2+ Quartos
             </button>
         </div>
