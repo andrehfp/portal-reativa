@@ -491,6 +491,8 @@
                 if (filterManager) {
                     updateQuickFilterStates();
                 }
+                updateSortControlsVisibility();
+                syncSortDropdownFromState();
             }, 100);
         });
         
@@ -614,6 +616,30 @@
             });
         }
         
+        // Show/hide sort controls based on search results
+        function updateSortControlsVisibility() {
+            const sortControls = document.getElementById('sort-controls');
+            const searchResults = document.getElementById('search-results');
+            
+            if (sortControls && searchResults) {
+                // Check if there are properties displayed
+                const hasProperties = searchResults.querySelector('.grid') !== null;
+                sortControls.style.display = hasProperties ? 'block' : 'none';
+                console.log('SortControls: Visibility set to', hasProperties ? 'visible' : 'hidden');
+            }
+        }
+        
+        // Sync sort dropdown value from hidden field or current_sort
+        function syncSortDropdownFromState() {
+            const sortDropdown = document.getElementById('sort-dropdown');
+            const hiddenSortField = document.getElementById('main-sort-field');
+            
+            if (sortDropdown && hiddenSortField) {
+                sortDropdown.value = hiddenSortField.value;
+                console.log('SortSync: Synced dropdown to hidden field value:', hiddenSortField.value);
+            }
+        }
+
         // Update filter states and sort sync after HTMX updates
         document.addEventListener('htmx:afterSettle', function(event) {
             if (event.target.querySelector('input[name="q"]')) {
@@ -625,14 +651,11 @@
                 }, 100);
             }
             
-            // Sync sort values after HTMX content replacement
+            // Handle search results updates
             if (event.target.id === 'search-results') {
-                console.log('SortSync: HTMX updated search results, syncing sort values');
-                const sortDropdown = event.target.querySelector('select[name="sort"]');
-                if (sortDropdown && sortDropdown.value) {
-                    console.log('SortSync: Found dropdown with value:', sortDropdown.value);
-                    syncSortValues(sortDropdown.value);
-                }
+                console.log('SortSync: HTMX updated search results');
+                updateSortControlsVisibility();
+                syncSortDropdownFromState();
             }
         });
     </script>

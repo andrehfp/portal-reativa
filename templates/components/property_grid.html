@@ -59,26 +59,10 @@
     <div id="property-list-top"></div>
     
     <!-- Results Count -->
-    <div class="mb-8 flex items-center justify-between">
+    <div class="mb-8">
         <p class="text-sm text-gray-500">
             {{ total }} {% if total == 1 %}propriedade encontrada{% else %}propriedades encontradas{% endif %}
         </p>
-        <div class="flex items-center gap-4">
-            <!-- Sort -->
-            <select class="text-sm border-0 bg-gray-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-                    hx-get="/search"
-                    hx-target="#search-results" 
-                    hx-vals="js:{'sort': this.value, 'q': '{{ query | e }}', 'page': 1}"
-                    hx-trigger="change"
-                    hx-swap="innerHTML show:#property-list-top:top"
-                    onchange="syncSortValues(this.value)"
-                    name="sort">
-                <option value="relevance" {% if current_sort == 'relevance' %}selected{% endif %}>Relevância</option>
-                <option value="price_asc" {% if current_sort == 'price_asc' %}selected{% endif %}>Menor preço</option>
-                <option value="price_desc" {% if current_sort == 'price_desc' %}selected{% endif %}>Maior preço</option>
-                <option value="recent" {% if current_sort == 'recent' %}selected{% endif %}>Mais recente</option>
-            </select>
-        </div>
     </div>
     
     <!-- Refined Property Grid -->

@@ -81,6 +81,34 @@
         </div>
     </div>
     
+    <!-- Sort Controls -->
+    <div id="sort-controls" class="max-w-7xl mx-auto px-6 lg:px-8 mb-6" style="display: none;">
+        <div class="flex justify-end">
+            <select class="text-sm border-0 bg-gray-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    hx-get="/search"
+                    hx-target="#search-results" 
+                    hx-vals="js:{'sort': this.value, 'q': document.querySelector('input[name=q]').value, 'page': 1}"
+                    hx-trigger="change"
+                    hx-swap="innerHTML show:#property-list-top:top"
+                    hx-indicator="#sort-spinner"
+                    onchange="syncSortValues(this.value)"
+                    id="sort-dropdown"
+                    name="sort">
+                <option value="relevance">Relevância</option>
+                <option value="price_asc">Menor preço</option>
+                <option value="price_desc">Maior preço</option>
+                <option value="recent">Mais recente</option>
+            </select>
+            <!-- Sort Loading Indicator -->
+            <div id="sort-spinner" class="htmx-indicator ml-2 flex items-center">
+                <svg class="animate-spin h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+    
     <!-- Search Results Container -->
     <div id="search-results" class="min-h-[400px]">
         {% if properties %}
